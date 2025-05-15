@@ -1,0 +1,62 @@
+# BlockMint Configuration File
+
+# General Settings
+settings:
+  # Maximum number of generators per player (0 = unlimited)
+  max-generators-per-player: 10
+  
+  # Whether to use holograms for generators
+  use-holograms: true
+  
+  # Distance at which holograms become visible (blocks)
+  hologram-view-distance: 16
+  
+  # Interval to check/update generators (in ticks, 20 ticks = 1 second)
+  update-interval: 100
+  
+  # Whether to automatically collect from generators
+  auto-collect: false
+  
+  # Item display settings
+  display-item:
+    # Whether to use custom model data for generator displays
+    use-custom-model-data: true
+    # Whether to rotate display items
+    rotate-display: true
+    # Rotation speed (in degrees per tick)
+    rotation-speed: 2
+    # Height above block
+    height-offset: 0.8
+
+# Economy Settings
+economy:
+  # Whether to enable selling generators
+  allow-selling: true
+  
+  # Sell value multiplier (percentage of full value)
+  sell-value-multiplier: 0.75
+  
+  # Whether to charge for upgrades
+  charge-for-upgrades: true
+
+# Database Settings
+database:
+  # How often to save data (in minutes)
+  save-interval: 10
+  
+  # Whether to keep backups
+  create-backups: true
+  
+  # Maximum number of backups to keep
+  max-backups: 5
+
+# Debug Settings
+debug:
+  # Whether to enable debug mode
+  enabled: false
+  
+  # Whether to log database operations
+  log-database: false
+  
+  # Whether to log generator operations
+  log-generators: false

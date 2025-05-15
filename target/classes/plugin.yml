@@ -1,4 +1,44 @@
-name: blockmint
+name: BlockMint
 main: id.rnggagib.BlockMint
-version: 1.0-SNAPSHOT
+version: 1.0.0
 api-version: 1.15
+authors: [rnggagib]
+description: A Skyblock generator plugin that turns blocks into currency
+depend: [Vault]
+softdepend: [PlaceholderAPI]
+
+commands:
+  blockmint:
+    description: Main command for BlockMint plugin
+    aliases: [bm, gens, gen]
+    usage: /blockmint help
+
+permissions:
+  blockmint.admin.*:
+    description: Grants all admin permissions
+    default: op
+    children:
+      blockmint.admin.reload: true
+      blockmint.admin.give: true
+      blockmint.admin.remove: true
+  blockmint.user.*:
+    description: Grants all user permissions
+    default: true
+    children:
+      blockmint.use: true
+      blockmint.stats: true
+  blockmint.use:
+    description: Allows using basic features of BlockMint
+    default: true
+  blockmint.admin.reload:
+    description: Allows reloading plugin configuration
+    default: op
+  blockmint.admin.give:
+    description: Allows giving generator items to players
+    default: op
+  blockmint.admin.remove:
+    description: Allows removing any generator
+    default: op
+  blockmint.stats:
+    description: Allows viewing generator statistics
+    default: true

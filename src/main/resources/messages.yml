@@ -1,0 +1,47 @@
+# BlockMint Messages Configuration
+# Use MiniMessage format for text styling
+
+prefix: "<gradient:#FF5F6D:#FFC371>BlockMint</gradient> <dark_gray>»</dark_gray> "
+
+# General Messages
+general:
+  no-permission: "<prefix> <red>You don't have permission to do that.</red>"
+  player-only: "<prefix> <red>This command is for players only.</red>"
+  invalid-block: "<prefix> <red>This block can't be used as a generator.</red>"
+  generator-placed: "<prefix> <green>Generator placed successfully!</green>"
+  generator-removed: "<prefix> <green>Generator removed successfully!</green>"
+  generator-limit-reached: "<prefix> <red>You've reached your generator limit of {limit}!</red>"
+  collect-success: "<prefix> <green>Collected {amount} from your generator!</green>"
+  upgrade-success: "<prefix> <green>Generator upgraded to level {level}!</green>"
+  max-level-reached: "<prefix> <gold>This generator is already at maximum level!</gold>"
+  not-enough-money: "<prefix> <red>You need {cost} to do this!</red>"
+
+# Command Messages
+commands:
+  unknown: "<prefix> <red>Unknown command. Type <gray>/blockmint help</gray> for help.</red>"
+  no-permission: "<prefix> <red>You don't have permission to use this command.</red>"
+  player-only: "<prefix> <red>This command can only be executed by players.</red>"
+  reload-success: "<prefix> <green>Configuration reloaded successfully!</green> <gray>v{version}</gray>"
+  help-header: "<gradient:#FF5F6D:#FFC371>====== BlockMint Help ======</gradient>"
+  help-footer: "<gradient:#FF5F6D:#FFC371>========================</gradient>"
+  help-command: "<yellow>{command}</yellow> <gray>- {description}</gray>"
+  stats-header: "<gradient:#FF5F6D:#FFC371>====== Your Generator Stats ======</gradient>"
+  stats-count: "<yellow>Generators Owned:</yellow> <white>{count}/{max}</white>"
+  stats-earnings: "<yellow>Total Earnings:</yellow> <white>{earnings}</white>"
+  give-usage: "<prefix> <red>Usage: /blockmint give <player> <type> [amount]</red>"
+  give-success: "<prefix> <green>Gave {amount} {type} generator(s) to {player}.</green>"
+  give-received: "<prefix> <green>You received {amount} {type} generator(s)!</green>"
+  invalid-player: "<prefix> <red>Player not found.</red>"
+  invalid-type: "<prefix> <red>Invalid generator type.</red>"
+  invalid-amount: "<prefix> <red>Amount must be a positive number.</red>"
+  list-header: "<gradient:#FF5F6D:#FFC371>====== Available Generator Types ======</gradient>"
+  list-item: "<yellow>{name}</yellow> - <white>Base Value: ${value}</white>"
+
+# Generator Display Messages
+generator:
+  hologram-title: "<gradient:#FF5F6D:#FFC371>{name}</gradient>"
+  hologram-level: "<yellow>Level {level}/{max-level}</yellow>"
+  hologram-value: "<white>Value: ${value}</white>"
+  hologram-owner: "<gray>Owner: {owner}</gray>"
+  hologram-progress: "<gray>Generating... {percent}%</gray>"
+  hologram-ready: "<green>Click to collect!</green>"
