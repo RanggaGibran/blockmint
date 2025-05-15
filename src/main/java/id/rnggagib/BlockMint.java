@@ -15,6 +15,7 @@ import id.rnggagib.blockmint.placeholders.BlockMintExpansion;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import id.rnggagib.blockmint.utils.MessageManager;
 import id.rnggagib.blockmint.utils.PluginUtils;
+import id.rnggagib.blockmint.network.NetworkManager;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -33,6 +34,7 @@ public class BlockMint extends JavaPlugin {
     private GeneratorTask generatorTask;
     private int taskId = -1;
     private PluginUtils utils;
+    private NetworkManager networkManager;
     private boolean isFullyEnabled = false;
     
     @Override
@@ -101,6 +103,10 @@ public class BlockMint extends JavaPlugin {
         getLogger().info("Removing all generator holograms...");
         DisplayManager.removeAllHolograms();
         
+        if (networkManager != null) {
+            networkManager.shutdown();
+        }
+        
         if (databaseManager != null) {
             databaseManager.close();
         }
@@ -123,6 +129,9 @@ public class BlockMint extends JavaPlugin {
         
         generatorManager = new GeneratorManager(this);
         generatorManager.loadGeneratorTypes();
+        
+        networkManager = new NetworkManager(this);
+        networkManager.initialize();
         
         guiManager = new GUIManager(this);
         
@@ -226,5 +235,9 @@ public class BlockMint extends JavaPlugin {
     
     public PluginUtils getUtils() {
         return utils;
+    }
+    
+    public NetworkManager getNetworkManager() {
+        return networkManager;
     }
 }

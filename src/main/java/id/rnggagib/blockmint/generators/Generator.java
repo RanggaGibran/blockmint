@@ -2,6 +2,9 @@ package id.rnggagib.blockmint.generators;
 
 import org.bukkit.Location;
 
+import id.rnggagib.BlockMint;
+import id.rnggagib.blockmint.network.GeneratorNetwork;
+
 import java.util.UUID;
 
 public class Generator {
@@ -59,6 +62,26 @@ public class Generator {
     }
     
     public double getValue() {
-        return type.getBaseValue() * Math.pow(type.getValueMultiplier(), level - 1);
+        double baseValue = type.getBaseValue() * Math.pow(type.getValueMultiplier(), level - 1);
+        double networkBonus = getNetworkBonus();
+        
+        return baseValue * (1 + networkBonus);
+    }
+    
+    public double getNetworkBonus() {
+        if (BlockMint.getInstance().getNetworkManager() != null) {
+            return BlockMint.getInstance().getNetworkManager().getGeneratorEfficiencyBonus(id);
+        }
+        return 0;
+    }
+    
+    public int getNetworkId() {
+        if (BlockMint.getInstance().getNetworkManager() != null) {
+            GeneratorNetwork network = BlockMint.getInstance().getNetworkManager().getGeneratorNetwork(id);
+            if (network != null) {
+                return network.getNetworkId();
+            }
+        }
+        return -1;
     }
 }

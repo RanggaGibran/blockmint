@@ -124,3 +124,41 @@ debug:
   
   # Whether to log generator operations
   log-generators: false
+
+# Networks Settings
+networks:
+  visualization:
+    enabled: true
+    particle-density: 2
+    max-distance: 50
+  
+  tiers:
+    BASIC:
+      cost: 1000
+      base-bonus: 0.05
+      per-generator-bonus: 0.01
+      max-bonus: 0.25
+      
+    ADVANCED:
+      cost: 5000
+      base-bonus: 0.1
+      per-generator-bonus: 0.015
+      max-bonus: 0.4
+      
+    ELITE:
+      cost: 25000
+      base-bonus: 0.15
+      per-generator-bonus: 0.02
+      max-bonus: 0.6
+      
+    ULTIMATE:
+      cost: 100000
+      base-bonus: 0.2
+      per-generator-bonus: 0.025
+      max-bonus: 0.8
+      
+    CELESTIAL:
+      cost: 500000
+      base-bonus: 0.3
+      per-generator-bonus: 0.03
+      max-bonus: 1.0

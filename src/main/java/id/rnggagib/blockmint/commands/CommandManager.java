@@ -37,6 +37,7 @@ public class CommandManager implements CommandExecutor, TabCompleter {
         registerSubCommand(new ListCommand(plugin));
         registerSubCommand(new StatsCommand(plugin));
         registerSubCommand(new ManageCommand(plugin));
+        registerSubCommand(new NetworkCommand(plugin));
     }
     
     private void registerSubCommand(SubCommand subCommand) {

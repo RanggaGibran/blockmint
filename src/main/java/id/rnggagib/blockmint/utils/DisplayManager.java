@@ -3,6 +3,7 @@ package id.rnggagib.blockmint.utils;
 import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.generators.GeneratorType;
+import id.rnggagib.blockmint.network.GeneratorNetwork;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -113,40 +114,50 @@ public class DisplayManager {
     
     public static void updateHologram(BlockMint plugin, Generator generator) {
         Location location = generator.getLocation();
-        if (!holograms.containsKey(location)) {
-            createHologram(plugin, location, generator.getType(), generator.getLevel());
-            return;
+        
+        if (!hasHologram(location)) return;
+        
+        ArmorStand nameStand = (ArmorStand) holograms.get(location).get(0);
+        ArmorStand infoStand = (ArmorStand) holograms.get(location).get(1);
+        
+        String name = generator.getType().getName() + " Generator";
+        String level = "Level " + generator.getLevel() + "/" + generator.getType().getMaxLevel();
+        
+        GeneratorNetwork network = plugin.getNetworkManager().getGeneratorNetwork(generator.getId());
+        String networkInfo = "";
+        if (network != null) {
+            networkInfo = " §7[§b⚙ " + network.getTier().name().charAt(0) + "§7]";
         }
         
-        List<Entity> entities = holograms.get(location);
-        if (entities.size() < 3) {
-            removeHologram(location);
-            createHologram(plugin, location, generator.getType(), generator.getLevel());
-            return;
-        }
-        
-        anchorItemExactly(plugin, location);
-        
-        ArmorStand levelStand = (ArmorStand) entities.get(1);
-        String levelText = plugin.getMessageManager().getMessage("generator.hologram-level")
-                .replace("{level}", String.valueOf(generator.getLevel()))
-                .replace("{max-level}", String.valueOf(generator.getType().getMaxLevel()));
-        levelStand.setCustomName(plugin.getMessageManager().stripMiniMessage(levelText));
+        nameStand.setCustomName("§6§l" + name + networkInfo);
         
         if (generator.canGenerate()) {
-            ArmorStand ownerStand = (ArmorStand) entities.get(2);
-            String readyText = plugin.getMessageManager().getMessage("generator.hologram-ready");
-            ownerStand.setCustomName(plugin.getMessageManager().stripMiniMessage(readyText));
+            infoStand.setCustomName("§a✓ Ready to collect!");
         } else {
-            ArmorStand ownerStand = (ArmorStand) entities.get(2);
             long elapsed = System.currentTimeMillis() - generator.getLastGeneration();
             long total = generator.getType().getGenerationTime() * 1000;
-            int percent = (int) ((elapsed * 100) / total);
+            long remaining = total - elapsed;
             
-            String progressText = plugin.getMessageManager().getMessage("generator.hologram-progress")
-                    .replace("{percent}", String.valueOf(percent));
-            ownerStand.setCustomName(plugin.getMessageManager().stripMiniMessage(progressText));
+            infoStand.setCustomName("§e" + level + " §7| §f" + formatTime(remaining / 1000));
         }
+    }
+    
+    private static String formatTime(long seconds) {
+        if (seconds < 60) {
+            return seconds + "s";
+        }
+        
+        long minutes = seconds / 60;
+        seconds = seconds % 60;
+        
+        if (minutes < 60) {
+            return minutes + "m " + seconds + "s";
+        }
+        
+        long hours = minutes / 60;
+        minutes = minutes % 60;
+        
+        return hours + "h " + minutes + "m";
     }
     
     private static void anchorItemExactly(BlockMint plugin, Location blockLocation) {
