@@ -18,6 +18,7 @@ import id.rnggagib.blockmint.utils.MessageManager;
 import id.rnggagib.blockmint.utils.PluginUtils;
 import id.rnggagib.blockmint.network.NetworkManager;
 import id.rnggagib.blockmint.gui.NetworkGUIManager;
+import id.rnggagib.blockmint.utils.DependencyManager;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -38,6 +39,7 @@ public class BlockMint extends JavaPlugin {
     private PluginUtils utils;
     private NetworkManager networkManager;
     private NetworkGUIManager networkGUIManager;
+    private DependencyManager dependencyManager;
     private boolean isFullyEnabled = false;
     
     @Override
@@ -126,6 +128,8 @@ public class BlockMint extends JavaPlugin {
         configManager.loadConfigs();
         
         messageManager = new MessageManager(this);
+        
+        dependencyManager = new DependencyManager(this);
         
         databaseManager = new DatabaseManager(this);
         databaseManager.initialize();
@@ -249,5 +253,9 @@ public class BlockMint extends JavaPlugin {
     
     public NetworkGUIManager getNetworkGUIManager() {
         return networkGUIManager;
+    }
+    
+    public DependencyManager getDependencyManager() {
+        return dependencyManager;
     }
 }

@@ -42,7 +42,6 @@ public class NetworkGUIManager {
         
         NetworkTier tier = network.getTier();
         
-        // Network info
         ItemStack infoItem = createItem(
                 Material.BEACON, 
                 ChatColor.AQUA + "Network Information", 
@@ -56,7 +55,6 @@ public class NetworkGUIManager {
         );
         inventory.setItem(4, infoItem);
         
-        // Advanced statistics dashboard button
         ItemStack statsItem = createItem(
                 Material.SPYGLASS,
                 ChatColor.GOLD + "Advanced Statistics Dashboard",
@@ -69,7 +67,6 @@ public class NetworkGUIManager {
         );
         inventory.setItem(8, statsItem);
         
-        // Network range visualization
         ItemStack visualizeItem = createItem(
                 Material.ENDER_EYE,
                 ChatColor.GREEN + "Toggle Network Visualization",
@@ -77,7 +74,6 @@ public class NetworkGUIManager {
         );
         inventory.setItem(11, visualizeItem);
         
-        // Connected generators
         ItemStack generatorsItem = createItem(
                 Material.CRAFTING_TABLE,
                 ChatColor.YELLOW + "View Connected Generators",
@@ -88,7 +84,6 @@ public class NetworkGUIManager {
         );
         inventory.setItem(13, generatorsItem);
         
-        // Upgrade network
         List<String> upgradeLore = new ArrayList<>();
         if (!tier.isMaxTier()) {
             NetworkTier nextTier = tier.getNextTier();
@@ -108,21 +103,6 @@ public class NetworkGUIManager {
         ItemStack upgradeItem = createItem(upgradeItemType, ChatColor.GOLD + "Upgrade Network", upgradeLore);
         inventory.setItem(15, upgradeItem);
         
-        // Pickup network
-        ItemStack pickupItem = createItem(
-                Material.CHEST_MINECART,
-                ChatColor.RED + "Dismantle Network",
-                List.of(
-                    ChatColor.GRAY + "Removes this network and returns",
-                    ChatColor.GRAY + "the network block to your inventory.",
-                    ChatColor.GRAY + "All connections will be lost.",
-                    "",
-                    ChatColor.RED + "This action cannot be undone!"
-                )
-        );
-        inventory.setItem(31, pickupItem);
-        
-        // Fill empty slots with glass panes
         for (int i = 0; i < 36; i++) {
             if (inventory.getItem(i) == null) {
                 inventory.setItem(i, createItem(Material.BLACK_STAINED_GLASS_PANE, " ", null));
@@ -272,7 +252,6 @@ public class NetworkGUIManager {
         String title = player.getOpenInventory().getTitle();
         
         if (title.startsWith(ChatColor.DARK_AQUA + "" + ChatColor.BOLD + "Network: ")) {
-            // Main network menu
             switch (slot) {
                 case 8:  // Statistics Dashboard
                     openNetworkStatisticsDashboard(player, network);
@@ -294,31 +273,23 @@ public class NetworkGUIManager {
                         player.sendMessage(ChatColor.RED + "This network is already at the maximum tier.");
                     }
                     break;
-                    
-                case 31: // Dismantle
-                    handleNetworkDismantling(player, network);
-                    break;
             }
         } else if (title.startsWith(ChatColor.DARK_AQUA + "Network Generators")) {
-            // Generators menu
             Map<Integer, Generator> slotMap = generatorSlots.getOrDefault(player.getUniqueId(), new HashMap<>());
             
             if (slot == 45 && playerPages.getOrDefault(player.getUniqueId(), 0) > 0) {
-                // Previous page
                 playerPages.put(player.getUniqueId(), playerPages.get(player.getUniqueId()) - 1);
                 openConnectedGeneratorsGUI(player);
                 return;
             }
             
             if (slot == 53) {
-                // Next page
                 playerPages.put(player.getUniqueId(), playerPages.get(player.getUniqueId()) + 1);
                 openConnectedGeneratorsGUI(player);
                 return;
             }
             
             if (slot == 49) {
-                // Back to main menu
                 openNetworkMainMenu(player, network);
                 return;
             }
@@ -326,7 +297,6 @@ public class NetworkGUIManager {
             Generator generator = slotMap.get(slot);
             if (generator != null) {
                 if (slot < 18) {
-                    // Remove from network
                     boolean success = plugin.getNetworkManager().removeGeneratorFromNetwork(generator.getId());
                     if (success) {
                         Map<String, String> placeholders = new HashMap<>();
@@ -337,7 +307,6 @@ public class NetworkGUIManager {
                         plugin.getMessageManager().send(player, "network.remove-failed");
                     }
                 } else if (slot >= 27) {
-                    // Add to network
                     if (network.isMaxCapacity()) {
                         plugin.getMessageManager().send(player, "network.network-full");
                         return;

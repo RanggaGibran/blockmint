@@ -28,6 +28,10 @@ public class DatabaseManager {
         if (dbType.equalsIgnoreCase("mysql")) {
             initializeMySQL();
         } else {
+            if (!plugin.getDependencyManager().ensureSQLiteDriverLoaded()) {
+                plugin.getLogger().severe("Failed to load SQLite driver! Database functionality will not work.");
+                return;
+            }
             initializeSQLite();
         }
         
@@ -46,10 +50,10 @@ public class DatabaseManager {
         String jdbcUrl = "jdbc:sqlite:" + dataFolder + File.separator + fileName;
         
         try {
-            Class.forName("org.sqlite.JDBC");
             connection = DriverManager.getConnection(jdbcUrl);
+            connection.setAutoCommit(true);
             plugin.getLogger().info("Successfully connected to SQLite database!");
-        } catch (ClassNotFoundException | SQLException e) {
+        } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to initialize SQLite database!", e);
         }
     }
