@@ -32,6 +32,7 @@ public class DatabaseManager {
         }
         
         setupTables();
+        verifyTableStructure();
     }
     
     private void initializeSQLite() {
@@ -62,7 +63,7 @@ public class DatabaseManager {
         String password = config.getString("database.mysql.password", "");
         boolean useSSL = config.getBoolean("database.mysql.ssl", false);
         
-        String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + database + "?useSSL=" + useSSL;
+        String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + database + "?useSSL=" + useSSL + "&allowPublicKeyRetrieval=true";
         
         try {
             Class.forName("com.mysql.jdbc.Driver");
@@ -94,8 +95,52 @@ public class DatabaseManager {
                     "total_earnings REAL DEFAULT 0.0" +
                     ")");
             
+            plugin.getLogger().info("Database tables initialized successfully.");
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Error setting up database tables!", e);
+        }
+    }
+    
+    private void verifyTableStructure() {
+        try {
+            boolean playerStatsNeedsMigration = false;
+            boolean hasGeneratorsPlacedColumn = false;
+            boolean hasGeneratorsOwnedColumn = false;
+            boolean hasPlayerNameColumn = false;
+            
+            ResultSet playerStatsColumns = connection.getMetaData().getColumns(null, null, "player_stats", null);
+            while (playerStatsColumns.next()) {
+                String columnName = playerStatsColumns.getString("COLUMN_NAME");
+                if ("generators_placed".equals(columnName)) {
+                    hasGeneratorsPlacedColumn = true;
+                }
+                if ("generators_owned".equals(columnName)) {
+                    hasGeneratorsOwnedColumn = true;
+                }
+                if ("player_name".equals(columnName)) {
+                    hasPlayerNameColumn = true;
+                }
+            }
+            
+            if (hasGeneratorsPlacedColumn && !hasGeneratorsOwnedColumn) {
+                plugin.getLogger().info("Migrating player_stats table from generators_placed to generators_owned...");
+                try (Statement stmt = connection.createStatement()) {
+                    stmt.execute("ALTER TABLE player_stats RENAME COLUMN generators_placed TO generators_owned");
+                }
+                plugin.getLogger().info("Migration complete.");
+            }
+            
+            if (!hasPlayerNameColumn) {
+                plugin.getLogger().info("Adding player_name column to player_stats table...");
+                try (Statement stmt = connection.createStatement()) {
+                    stmt.execute("ALTER TABLE player_stats ADD COLUMN player_name TEXT DEFAULT 'Unknown'");
+                }
+                plugin.getLogger().info("Column added successfully.");
+            }
+            
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.WARNING, "Error verifying table structure: " + e.getMessage());
+            plugin.getLogger().log(Level.INFO, "This is not critical if using SQLite with older versions.");
         }
     }
     
@@ -122,6 +167,10 @@ public class DatabaseManager {
         try (PreparedStatement stmt = prepareStatement(sql)) {
             return stmt.executeUpdate();
         }
+    }
+    
+    public Connection getConnection() {
+        return connection;
     }
     
     public void close() {

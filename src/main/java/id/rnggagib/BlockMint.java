@@ -15,6 +15,7 @@ import id.rnggagib.blockmint.utils.DisplayManager;
 import id.rnggagib.blockmint.utils.MessageManager;
 import id.rnggagib.blockmint.utils.PluginUtils;
 import net.milkbowl.vault.economy.Economy;
+import org.bukkit.Bukkit;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -31,10 +32,13 @@ public class BlockMint extends JavaPlugin {
     private GeneratorTask generatorTask;
     private int taskId = -1;
     private PluginUtils utils;
+    private boolean isFullyEnabled = false;
     
     @Override
     public void onEnable() {
         instance = this;
+        
+        getLogger().info("BlockMint starting up...");
         
         if (!setupEconomy()) {
             getLogger().severe("Vault or an Economy plugin not found! Disabling plugin.");
@@ -47,12 +51,7 @@ public class BlockMint extends JavaPlugin {
         registerListeners();
         startTasks();
         
-        // Ensure generators are recreated properly after all worlds are loaded
-        getServer().getScheduler().runTaskLater(this, () -> {
-            getLogger().info("Performing delayed generator recreation...");
-            generatorManager.recreateHolograms();
-            getLogger().info("Generator recreation complete. Active holograms: " + DisplayManager.getActiveHologramsCount());
-        }, 100L);
+        scheduleDelayedStartup();
         
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new BlockMintExpansion(this).register();
@@ -62,11 +61,42 @@ public class BlockMint extends JavaPlugin {
         getLogger().info("BlockMint has been enabled!");
     }
     
+    private void scheduleDelayedStartup() {
+        getLogger().info("Scheduling delayed startup tasks for generator stability...");
+        
+        int initialDelay = getConfigManager().getConfig().getInt("settings.startup.initial-delay", 40);
+        
+        getServer().getScheduler().runTaskLater(this, () -> {
+            performDelayedStartup();
+        }, initialDelay);
+    }
+    
+    private void performDelayedStartup() {
+        getLogger().info("Performing delayed generator recreation and verification...");
+        
+        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+            getLogger().info("Loading generator data from database (async)...");
+            generatorManager.loadGeneratorsFromDatabaseAsync();
+            
+            getServer().getScheduler().runTask(this, () -> {
+                getLogger().info("Processing generator blocks and holograms (sync)...");
+                generatorManager.processLoadedGenerators();
+                
+                getLogger().info("Startup complete. Status:");
+                getLogger().info(" - Active generators: " + generatorManager.getActiveGeneratorCount());
+                getLogger().info(" - Active holograms: " + generatorManager.getActiveHologramCount());
+                
+                isFullyEnabled = true;
+            });
+        });
+    }
+    
     @Override
     public void onDisable() {
+        isFullyEnabled = false;
+        
         stopTasks();
         
-        // Safely remove all holograms before server shutdown
         getLogger().info("Removing all generator holograms...");
         DisplayManager.removeAllHolograms();
         
@@ -91,7 +121,7 @@ public class BlockMint extends JavaPlugin {
         databaseManager.initialize();
         
         generatorManager = new GeneratorManager(this);
-        generatorManager.loadGenerators();
+        generatorManager.loadGeneratorTypes();
         
         guiManager = new GUIManager(this);
         
@@ -141,13 +171,23 @@ public class BlockMint extends JavaPlugin {
         stopTasks();
         configManager.reloadConfigs();
         messageManager.reload();
-        generatorManager.reloadGenerators();
-        startTasks();
         
-        // Re-create holograms after reload
-        getServer().getScheduler().runTaskLater(this, () -> {
-            generatorManager.recreateHolograms();
-        }, 20L);
+        getLogger().info("Reloading generators...");
+        generatorManager.reloadGeneratorTypes();
+        
+        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+            generatorManager.loadGeneratorsFromDatabaseAsync();
+            
+            getServer().getScheduler().runTask(this, () -> {
+                generatorManager.processLoadedGenerators();
+                startTasks();
+                getLogger().info("Generators reload complete!");
+            });
+        });
+    }
+    
+    public boolean isFullyEnabled() {
+        return isFullyEnabled;
     }
     
     public static BlockMint getInstance() {

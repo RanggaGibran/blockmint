@@ -62,6 +62,11 @@ settings:
     # Interval for sound playback (in milliseconds)
     sound-interval: 3000
 
+  # Startup settings
+  startup:
+    initial-delay: 40
+    reload-delay: 20
+
 # Economy Settings
 economy:
   # Whether to enable selling generators

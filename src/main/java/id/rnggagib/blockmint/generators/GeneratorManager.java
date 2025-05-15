@@ -2,6 +2,7 @@ package id.rnggagib.blockmint.generators;
 
 import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.utils.DisplayManager;
+import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
@@ -10,7 +11,9 @@ import org.bukkit.configuration.file.FileConfiguration;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,14 +24,13 @@ public class GeneratorManager {
     private final BlockMint plugin;
     private final Map<String, GeneratorType> generatorTypes = new HashMap<>();
     private final Map<Location, Generator> activeGenerators = new ConcurrentHashMap<>();
+    private int databaseGeneratorCount = 0;
+    private int loadedGeneratorCount = 0;
+    private int activeHologramCount = 0;
+    private List<Generator> pendingGenerators = new ArrayList<>();
     
     public GeneratorManager(BlockMint plugin) {
         this.plugin = plugin;
-    }
-    
-    public void loadGenerators() {
-        loadGeneratorTypes();
-        loadGeneratorsFromDatabase();
     }
     
     public void loadGeneratorTypes() {
@@ -52,8 +54,6 @@ public class GeneratorManager {
                 plugin.getLogger().warning("Type section for " + key + " is null, skipping");
                 continue;
             }
-            
-            plugin.getLogger().info("Processing generator type: " + key);
             
             String name = typeSection.getString("name", key);
             String material = typeSection.getString("material", "DIAMOND_BLOCK");
@@ -79,15 +79,18 @@ public class GeneratorManager {
             );
             
             generatorTypes.put(key, type);
-            plugin.getLogger().info("Successfully loaded generator type: " + key);
         }
         
         plugin.getLogger().info("Loaded " + generatorTypes.size() + " generator types!");
     }
     
-    public void loadGeneratorsFromDatabase() {
+    public void loadGeneratorsFromDatabaseAsync() {
         activeGenerators.clear();
-        DisplayManager.removeAllHolograms();
+        pendingGenerators.clear();
+        databaseGeneratorCount = 0;
+        loadedGeneratorCount = 0;
+        
+        plugin.getLogger().info("Loading generator data from database...");
         
         try {
             PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
@@ -96,8 +99,9 @@ public class GeneratorManager {
             
             ResultSet rs = stmt.executeQuery();
             
-            int count = 0;
             while (rs.next()) {
+                databaseGeneratorCount++;
+                
                 int id = rs.getInt("id");
                 UUID owner = UUID.fromString(rs.getString("owner"));
                 String world = rs.getString("world");
@@ -109,50 +113,90 @@ public class GeneratorManager {
                 long lastGeneration = rs.getLong("last_generation");
                 
                 if (!generatorTypes.containsKey(type)) {
-                    plugin.getLogger().warning("Unknown generator type: " + type + " for generator " + id);
+                    plugin.getLogger().warning("Unknown generator type: " + type + " for generator " + id + ", skipping");
                     continue;
                 }
                 
                 GeneratorType generatorType = generatorTypes.get(type);
                 
                 if (plugin.getServer().getWorld(world) == null) {
-                    plugin.getLogger().warning("World " + world + " not found for generator " + id);
+                    plugin.getLogger().warning("World " + world + " not found for generator " + id + ", skipping for now");
                     continue;
                 }
                 
-                Location location = new Location(plugin.getServer().getWorld(world), x, y, z);
-                
-                Generator generator = new Generator(id, owner, location, generatorType, level);
-                generator.setLastGeneration(lastGeneration);
-                
-                activeGenerators.put(location, generator);
-                
-                if (location.getWorld() != null && location.getChunk().isLoaded()) {
-                    if (location.getBlock().getType() != Material.valueOf(generatorType.getMaterial())) {
-                        location.getBlock().setType(Material.valueOf(generatorType.getMaterial()));
-                    }
+                try {
+                    Location location = new Location(plugin.getServer().getWorld(world), x, y, z);
                     
-                    if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true)) {
-                        DisplayManager.createHologram(plugin, location, generatorType, level);
-                    }
+                    Generator generator = new Generator(id, owner, location, generatorType, level);
+                    generator.setLastGeneration(lastGeneration);
+                    
+                    activeGenerators.put(location, generator);
+                    pendingGenerators.add(generator);
+                    loadedGeneratorCount++;
+                } catch (Exception e) {
+                    plugin.getLogger().log(Level.WARNING, "Error loading generator " + id + ": " + e.getMessage());
                 }
-                
-                count++;
             }
             
-            plugin.getLogger().info("Loaded " + count + " generators from database.");
+            plugin.getLogger().info("Loaded " + loadedGeneratorCount + " out of " + databaseGeneratorCount + " generators from database.");
             
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Error loading generators from database!", e);
         }
     }
     
+    public void processLoadedGenerators() {
+        DisplayManager.removeAllHolograms();
+        activeHologramCount = 0;
+        
+        plugin.getLogger().info("Processing " + pendingGenerators.size() + " generators on main thread...");
+        
+        int blocksPlaced = 0;
+        int hologramsCreated = 0;
+        
+        for (Generator generator : pendingGenerators) {
+            Location location = generator.getLocation();
+            
+            if (location.getWorld() == null) {
+                continue;
+            }
+            
+            if (!location.isWorldLoaded() || !location.getChunk().isLoaded()) {
+                continue;
+            }
+            
+            try {
+                if (location.getBlock().getType() != Material.valueOf(generator.getType().getMaterial())) {
+                    location.getBlock().setType(Material.valueOf(generator.getType().getMaterial()));
+                    blocksPlaced++;
+                }
+                
+                if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true)) {
+                    DisplayManager.createHologram(plugin, location, generator.getType(), generator.getLevel());
+                    activeHologramCount++;
+                    hologramsCreated++;
+                }
+            } catch (Exception e) {
+                plugin.getLogger().log(Level.WARNING, "Error setting block/hologram for generator " + generator.getId() + ": " + e.getMessage());
+            }
+        }
+        
+        pendingGenerators.clear();
+        plugin.getLogger().info("Generator processing complete: " + blocksPlaced + " blocks placed, " + hologramsCreated + " holograms created");
+    }
+    
+    private String formatLocation(Location loc) {
+        return loc.getWorld().getName() + " [" + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ() + "]";
+    }
+    
     public boolean placeGenerator(UUID owner, Location location, String type) {
         if (!generatorTypes.containsKey(type)) {
+            plugin.getLogger().warning("Attempted to place unknown generator type: " + type);
             return false;
         }
         
         if (activeGenerators.containsKey(location)) {
+            plugin.getLogger().warning("Attempted to place generator where one already exists at " + formatLocation(location));
             return false;
         }
         
@@ -181,12 +225,15 @@ public class GeneratorManager {
                 GeneratorType generatorType = generatorTypes.get(type);
                 Generator generator = new Generator(id, owner, location, generatorType, 1);
                 activeGenerators.put(location, generator);
+                loadedGeneratorCount++;
                 
                 updatePlayerStats(owner);
+                
+                plugin.getLogger().fine("Successfully placed generator ID " + id + " at " + formatLocation(location));
                 return true;
             }
         } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Error adding generator to database!", e);
+            plugin.getLogger().log(Level.SEVERE, "Error adding generator to database: " + e.getMessage(), e);
         }
         
         return false;
@@ -209,10 +256,16 @@ public class GeneratorManager {
             
             if (result > 0) {
                 activeGenerators.remove(location);
+                loadedGeneratorCount--;
+                
+                DisplayManager.removeHologram(location);
+                activeHologramCount--;
+                
+                plugin.getLogger().fine("Successfully removed generator ID " + generator.getId() + " at " + formatLocation(location));
                 return true;
             }
         } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Error removing generator from database!", e);
+            plugin.getLogger().log(Level.SEVERE, "Error removing generator from database: " + e.getMessage(), e);
         }
         
         return false;
@@ -241,12 +294,104 @@ public class GeneratorManager {
                 insertStmt.executeUpdate();
             }
         } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Error updating player stats!", e);
+            plugin.getLogger().log(Level.SEVERE, "Error updating player stats: " + e.getMessage(), e);
         }
     }
     
-    public void reloadGenerators() {
-        loadGenerators();
+    public void reloadGeneratorTypes() {
+        loadGeneratorTypes();
+    }
+    
+    public void recreateHolograms() {
+        DisplayManager.removeAllHolograms();
+        activeHologramCount = 0;
+        
+        int recreated = 0;
+        for (Map.Entry<Location, Generator> entry : activeGenerators.entrySet()) {
+            Location location = entry.getKey();
+            Generator generator = entry.getValue();
+            
+            if (location.getWorld() != null && location.getChunk().isLoaded()) {
+                try {
+                    if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true)) {
+                        DisplayManager.createHologram(plugin, location, generator.getType(), generator.getLevel());
+                        activeHologramCount++;
+                        recreated++;
+                    }
+                } catch (Exception e) {
+                    plugin.getLogger().warning("Error recreating hologram at " + formatLocation(location) + ": " + e.getMessage());
+                }
+            }
+        }
+        
+        plugin.getLogger().info("Hologram recreation complete: " + recreated + " holograms created");
+    }
+    
+    public void updateBlocksIfNeeded() {
+        int updated = 0;
+        
+        for (Map.Entry<Location, Generator> entry : activeGenerators.entrySet()) {
+            Location location = entry.getKey();
+            Generator generator = entry.getValue();
+            
+            if (location.getWorld() != null && location.getChunk().isLoaded()) {
+                if (location.getBlock().getType() != Material.valueOf(generator.getType().getMaterial())) {
+                    location.getBlock().setType(Material.valueOf(generator.getType().getMaterial()));
+                    updated++;
+                }
+            }
+        }
+        
+        if (updated > 0) {
+            plugin.getLogger().info("Updated " + updated + " generator blocks");
+        }
+    }
+    
+    public void handleChunkLoad(Chunk chunk) {
+        for (Map.Entry<Location, Generator> entry : activeGenerators.entrySet()) {
+            Location location = entry.getKey();
+            
+            if (isLocationInChunk(location, chunk)) {
+                Generator generator = entry.getValue();
+                
+                if (location.getBlock().getType() != Material.valueOf(generator.getType().getMaterial())) {
+                    location.getBlock().setType(Material.valueOf(generator.getType().getMaterial()));
+                }
+                
+                if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true) && 
+                    !DisplayManager.hasHologram(location)) {
+                    DisplayManager.createHologram(plugin, location, generator.getType(), generator.getLevel());
+                    activeHologramCount++;
+                }
+            }
+        }
+    }
+    
+    public void handleChunkUnload(Chunk chunk) {
+        int removedHolograms = 0;
+        
+        for (Map.Entry<Location, Generator> entry : activeGenerators.entrySet()) {
+            Location location = entry.getKey();
+            
+            if (isLocationInChunk(location, chunk)) {
+                if (DisplayManager.hasHologram(location)) {
+                    DisplayManager.removeHologram(location);
+                    activeHologramCount--;
+                    removedHolograms++;
+                }
+            }
+        }
+        
+        if (removedHolograms > 0 && plugin.getConfigManager().getConfig().getBoolean("settings.debug.chunk-events", false)) {
+            plugin.getLogger().fine("Removed " + removedHolograms + " holograms due to chunk unload at " + 
+                    chunk.getWorld().getName() + " [" + chunk.getX() + ", " + chunk.getZ() + "]");
+        }
+    }
+    
+    private boolean isLocationInChunk(Location location, Chunk chunk) {
+        return location.getWorld().equals(chunk.getWorld()) 
+                && location.getBlockX() >> 4 == chunk.getX() 
+                && location.getBlockZ() >> 4 == chunk.getZ();
     }
     
     public Generator getGenerator(Location location) {
@@ -261,22 +406,15 @@ public class GeneratorManager {
         return generatorTypes;
     }
     
-    public void recreateHolograms() {
-        DisplayManager.removeAllHolograms();
-        
-        for (Map.Entry<Location, Generator> entry : activeGenerators.entrySet()) {
-            Location location = entry.getKey();
-            Generator generator = entry.getValue();
-            
-            if (location.getWorld() != null && location.getChunk().isLoaded()) {
-                if (location.getBlock().getType() != Material.valueOf(generator.getType().getMaterial())) {
-                    location.getBlock().setType(Material.valueOf(generator.getType().getMaterial()));
-                }
-                
-                if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true)) {
-                    DisplayManager.createHologram(plugin, location, generator.getType(), generator.getLevel());
-                }
-            }
-        }
+    public int getActiveGeneratorCount() {
+        return loadedGeneratorCount;
+    }
+    
+    public int getDatabaseGeneratorCount() {
+        return databaseGeneratorCount;
+    }
+    
+    public int getActiveHologramCount() {
+        return activeHologramCount;
     }
 }
