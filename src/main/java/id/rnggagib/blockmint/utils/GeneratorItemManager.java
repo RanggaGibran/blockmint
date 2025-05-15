@@ -14,7 +14,7 @@ public class GeneratorItemManager {
     
     private static final NamespacedKey GENERATOR_TYPE_KEY = new NamespacedKey("blockmint", "generator_type");
     
-    public static ItemStack createGeneratorItem(GeneratorType type) {
+    public ItemStack createGeneratorItem(GeneratorType type) {
         Material material = Material.valueOf(type.getMaterial());
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();

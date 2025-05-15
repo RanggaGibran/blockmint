@@ -9,17 +9,30 @@ public class GeneratorType {
     private final double valueMultiplier;
     private final int maxLevel;
     private final long generationTime;
+    private final double upgradeCostBase;
+    private final double upgradeCostMultiplier;
     private final String textureValue;
     
-    public GeneratorType(String id, String name, String material, double baseValue, 
-                        double valueMultiplier, int maxLevel, long generationTime, String textureValue) {
+    public GeneratorType(
+            String id, 
+            String name, 
+            String material, 
+            double baseValue, 
+            long generationTime, 
+            double valueMultiplier, 
+            int maxLevel, 
+            double upgradeCostBase, 
+            double upgradeCostMultiplier,
+            String textureValue) {
         this.id = id;
         this.name = name;
         this.material = material;
         this.baseValue = baseValue;
+        this.generationTime = generationTime;
         this.valueMultiplier = valueMultiplier;
         this.maxLevel = maxLevel;
-        this.generationTime = generationTime;
+        this.upgradeCostBase = upgradeCostBase;
+        this.upgradeCostMultiplier = upgradeCostMultiplier;
         this.textureValue = textureValue;
     }
     
@@ -55,14 +68,11 @@ public class GeneratorType {
         return textureValue;
     }
     
-    public double getValueAtLevel(int level) {
-        return baseValue * Math.pow(valueMultiplier, level - 1);
+    public double getUpgradeCost(int currentLevel) {
+        return upgradeCostBase * Math.pow(upgradeCostMultiplier, currentLevel - 1);
     }
     
-    public double getUpgradeCost(int currentLevel) {
-        if (currentLevel >= maxLevel) {
-            return -1;
-        }
-        return getValueAtLevel(currentLevel + 1) * 5;
+    public double getValueAtLevel(int level) {
+        return baseValue * Math.pow(valueMultiplier, level - 1);
     }
 }

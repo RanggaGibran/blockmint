@@ -29,7 +29,19 @@ public class ConfigManager {
     }
     
     public void reloadConfigs() {
-        loadConfigs();
+        File configFile = new File(plugin.getDataFolder(), "config.yml");
+        mainConfig = YamlConfiguration.loadConfiguration(configFile);
+        configs.put("config", mainConfig);
+        
+        File generatorsFile = new File(plugin.getDataFolder(), "generators.yml");
+        generatorsConfig = YamlConfiguration.loadConfiguration(generatorsFile);
+        configs.put("generators", generatorsConfig);
+        
+        File messagesFile = new File(plugin.getDataFolder(), "messages.yml");
+        messagesConfig = YamlConfiguration.loadConfiguration(messagesFile);
+        configs.put("messages", messagesConfig);
+        
+        plugin.getLogger().info("All configurations reloaded successfully.");
     }
     
     private void createDefaultConfig() {
@@ -78,33 +90,14 @@ public class ConfigManager {
     
     public void saveConfig(String name) {
         FileConfiguration config = configs.get(name);
-        File file;
-        
-        if (name.equals("config")) {
-            plugin.saveConfig();
-            return;
-        }
-        
-        file = new File(plugin.getDataFolder(), name + ".yml");
+        if (config == null) return;
         
         try {
-            config.save(file);
+            String fileName = name + ".yml";
+            File configFile = new File(plugin.getDataFolder(), fileName);
+            config.save(configFile);
         } catch (IOException e) {
-            plugin.getLogger().severe("Could not save " + name + ".yml");
-            e.printStackTrace();
+            plugin.getLogger().severe("Could not save " + name + " config: " + e.getMessage());
         }
-    }
-    
-    public void reloadConfig(String name) {
-        if (name.equals("config")) {
-            plugin.reloadConfig();
-            mainConfig = plugin.getConfig();
-            configs.put("config", mainConfig);
-            return;
-        }
-        
-        File file = new File(plugin.getDataFolder(), name + ".yml");
-        FileConfiguration config = YamlConfiguration.loadConfiguration(file);
-        configs.put(name, config);
     }
 }

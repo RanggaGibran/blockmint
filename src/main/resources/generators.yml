@@ -1,83 +1,68 @@
 # BlockMint Generators Configuration
 
-generators:
-  hay_bale:
-    name: "Hay Generator"
-    material: HAY_BLOCK
-    base-value: 10.0
+types:
+  basic:
+    name: "Basic"
+    material: "COAL_BLOCK"
+    base-value: 5.0
+    generation-time: 120
     value-multiplier: 1.5
     max-level: 10
-    generation-time: 60
-    texture-value: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvZDc5OTY2NGZjNzgyNzJhMDRiODc5MjFjYjNkODI1Y2E1YjRjNzM2ZjczMjU2ZjcxYzU4ZTQzYjFkMTVjYiJ9fX0="
-    
-  iron_ore:
-    name: "Iron Generator"
-    material: IRON_ORE
-    base-value: 25.0
-    value-multiplier: 1.8
-    max-level: 15
-    generation-time: 90
-    texture-value: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvZmVmMWYwMmM4NDA5MDAzNzIxNjY4NjFjMTZiODliZTc0NzhhN2Y0MzA4ODhjMjI4Y2JhMzNlMTRiZTNhMCJ9fX0="
-    
-  iron_block:
-    name: "Pure Iron Generator"
-    material: IRON_BLOCK
-    base-value: 75.0
+    upgrade-cost-base: 50.0
+    upgrade-cost-multiplier: 1.8
+    texture-value: ""
+  
+  iron:
+    name: "Iron"
+    material: "IRON_BLOCK"
+    base-value: 10.0
+    generation-time: 180
     value-multiplier: 1.6
-    max-level: 20
-    generation-time: 120
-    texture-value: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvZmVmMWYwMmM4NDA5MDAzNzIxNjY4NjFjMTZiODliZTc0NzhhN2Y0MzA4ODhjMjI4Y2JhMzNlMTRiZTNhMCJ9fX0="
-    
-  gold_ore:
-    name: "Gold Generator"
-    material: GOLD_ORE
-    base-value: 50.0
-    value-multiplier: 2.0
-    max-level: 15
-    generation-time: 120
-    texture-value: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMTQzYzc5Y2Q5YzJkMzE4M2U4MWZmYzNiMTQ3NTU4YWI1ZDU5MWY0MjEzZDJhZWY1YzIzZWYtMTQ3NzY5In19fQ=="
-    
-  gold_block:
-    name: "Pure Gold Generator"
-    material: GOLD_BLOCK
-    base-value: 150.0
-    value-multiplier: 1.8
-    max-level: 20
-    generation-time: 180
-    texture-value: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMTQzYzc5Y2Q5YzJkMzE4M2U4MWZmYzNiMTQ3NTU4YWI1ZDU5MWY0MjEzZDJhZWY1YzIzZWYtMTQ3NzY5In19fQ=="
-    
-  diamond_ore:
-    name: "Diamond Generator" 
-    material: DIAMOND_ORE
-    base-value: 100.0
-    value-multiplier: 2.5
-    max-level: 15
-    generation-time: 180
-    texture-value: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMzMzYWU4ZGU3ZWQwNzllMzhkMjJmYmFmMjE5NTg2YWRkNDk1YzI3YzBiNTk2NmM5YjY3ZWI1OWQ1Y2M5In19fQ=="
-    
-  diamond_block:
-    name: "Pure Diamond Generator"
-    material: DIAMOND_BLOCK
-    base-value: 300.0
-    value-multiplier: 2.2
-    max-level: 20
-    generation-time: 240
-    texture-value: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMzMzYWU4ZGU3ZWQwNzllMzhkMjJmYmFmMjE5NTg2YWRkNDk1YzI3YzBiNTk2NmM5YjY3ZWI1OWQ1Y2M5In19fQ=="
-    
-  emerald_block:
-    name: "Pure Emerald Generator"
-    material: EMERALD_BLOCK
-    base-value: 500.0
-    value-multiplier: 2.5
-    max-level: 20
-    generation-time: 300
-    texture-value: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvYzQxMTIzYzQxYjg0ZDQ2YjVmZGFiYmI5MjE0ZWU1OTQ3NDk3NzJhY2NkNDdiMDlmOWQ5MzJjMTM3YWYzNyJ9fX0="
-    
-  netherite_block:
-    name: "Pure Netherite Generator"
-    material: NETHERITE_BLOCK
-    base-value: 1000.0
-    value-multiplier: 3.0
     max-level: 10
+    upgrade-cost-base: 100.0
+    upgrade-cost-multiplier: 1.9
+    texture-value: ""
+    
+  gold:
+    name: "Gold"
+    material: "GOLD_BLOCK"
+    base-value: 20.0
+    generation-time: 300
+    value-multiplier: 1.7
+    max-level: 10
+    upgrade-cost-base: 200.0
+    upgrade-cost-multiplier: 2.0
+    texture-value: ""
+    
+  diamond:
+    name: "Diamond"
+    material: "DIAMOND_BLOCK"
+    base-value: 50.0
     generation-time: 600
-    texture-value: "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMmMwMTljY2IyN2NlOGVjOWFhMjMwMWQ2NjA4YzNlZTNmNTZmMDVkMGRiY2JhYTViYzUxM2Q1MTczZjI3ZCJ9fX0="
+    value-multiplier: 1.8
+    max-level: 10
+    upgrade-cost-base: 500.0
+    upgrade-cost-multiplier: 2.1
+    texture-value: ""
+    
+  emerald:
+    name: "Emerald"
+    material: "EMERALD_BLOCK"
+    base-value: 100.0
+    generation-time: 900
+    value-multiplier: 1.9
+    max-level: 10
+    upgrade-cost-base: 1000.0
+    upgrade-cost-multiplier: 2.2
+    texture-value: ""
+    
+  netherite:
+    name: "Netherite"
+    material: "NETHERITE_BLOCK"
+    base-value: 200.0
+    generation-time: 1800
+    value-multiplier: 2.0
+    max-level: 10
+    upgrade-cost-base: 2000.0
+    upgrade-cost-multiplier: 2.3
+    texture-value: ""

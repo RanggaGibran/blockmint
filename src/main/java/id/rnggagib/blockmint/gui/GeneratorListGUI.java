@@ -3,11 +3,13 @@ package id.rnggagib.blockmint.gui;
 import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.generators.GeneratorType;
+import id.rnggagib.blockmint.utils.DisplayManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -110,7 +112,7 @@ public class GeneratorListGUI extends BaseGUI {
         if (slot < 36 && generatorSlots.containsKey(slot)) {
             Generator generator = generatorSlots.get(slot);
             
-            if (event.isShiftClick()) {
+            if (event.isShiftClick() && event.getClick() == ClickType.SHIFT_RIGHT) {
                 teleportToGenerator(generator);
             } else {
                 openGeneratorDetailsGUI(generator);
@@ -124,7 +126,7 @@ public class GeneratorListGUI extends BaseGUI {
                     GeneratorListGUI previousPage = new GeneratorListGUI(plugin, player, page - 1);
                     previousPage.open();
                     plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
-                    plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
+                    plugin.getGUIManager().registerActiveGUI(player.getUniqueId().toString(), previousPage);
                 }
                 break;
             case 49:
@@ -137,7 +139,7 @@ public class GeneratorListGUI extends BaseGUI {
                     GeneratorListGUI nextPage = new GeneratorListGUI(plugin, player, page + 1);
                     nextPage.open();
                     plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
-                    plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
+                    plugin.getGUIManager().registerActiveGUI(player.getUniqueId().toString(), nextPage);
                 }
                 break;
         }
@@ -147,7 +149,7 @@ public class GeneratorListGUI extends BaseGUI {
         GeneratorDetailsGUI detailsGUI = new GeneratorDetailsGUI(plugin, player, generator, page);
         detailsGUI.open();
         plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
-        plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
+        plugin.getGUIManager().registerActiveGUI(player.getUniqueId().toString(), detailsGUI);
     }
     
     private void teleportToGenerator(Generator generator) {
@@ -182,7 +184,7 @@ public class GeneratorListGUI extends BaseGUI {
             GeneratorListGUI refreshedGUI = new GeneratorListGUI(plugin, player, page);
             refreshedGUI.open();
             plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
-            plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
+            plugin.getGUIManager().registerActiveGUI(player.getUniqueId().toString(), refreshedGUI);
         } else {
             player.sendMessage(ChatColor.YELLOW + "You don't have any generators ready to collect!");
         }

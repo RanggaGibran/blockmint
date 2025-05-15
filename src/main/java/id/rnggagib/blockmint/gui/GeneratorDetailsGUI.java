@@ -2,7 +2,6 @@ package id.rnggagib.blockmint.gui;
 
 import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.generators.Generator;
-import id.rnggagib.blockmint.generators.GeneratorType;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -10,7 +9,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -72,6 +71,10 @@ public class GeneratorDetailsGUI extends BaseGUI {
         teleportLore.add("&7Teleport to this generator");
         inventory.setItem(15, GUIManager.createItem(Material.ENDER_PEARL, "&bTeleport", teleportLore));
         
+        List<String> pickupLore = new ArrayList<>();
+        pickupLore.add("&7Take generator to inventory");
+        inventory.setItem(22, GUIManager.createItem(Material.CHEST_MINECART, "&eCollect Generator", pickupLore));
+        
         inventory.setItem(18, GUIManager.createItem(Material.ARROW, "&aBack to List", null));
         
         for (int i = 0; i < 27; i++) {
@@ -102,25 +105,37 @@ public class GeneratorDetailsGUI extends BaseGUI {
             case 11:
                 if (generator.canGenerate()) {
                     collectGenerator();
-                    open();
+                    refreshGUI();
                 }
                 break;
             case 13:
                 if (generator.getLevel() < generator.getType().getMaxLevel()) {
                     upgradeGenerator();
-                    open();
+                    refreshGUI();
                 }
                 break;
             case 15:
                 teleportToGenerator();
                 break;
             case 18:
-                GeneratorListGUI listGUI = new GeneratorListGUI(plugin, player, listPage);
-                listGUI.open();
-                plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
-                plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
+                openListGUI();
+                break;
+            case 22:
+                pickupGenerator();
                 break;
         }
+    }
+    
+    private void refreshGUI() {
+        // Re-open the GUI to refresh it
+        open();
+    }
+    
+    private void openListGUI() {
+        GeneratorListGUI listGUI = new GeneratorListGUI(plugin, player, listPage);
+        listGUI.open();
+        plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
+        plugin.getGUIManager().registerActiveGUI(player.getUniqueId().toString(), listGUI);
     }
     
     private void collectGenerator() {
@@ -187,6 +202,33 @@ public class GeneratorDetailsGUI extends BaseGUI {
         player.teleport(location);
         player.sendMessage(ChatColor.GREEN + "Teleported to your " + generator.getType().getName() + " generator!");
         player.closeInventory();
+    }
+    
+    private void pickupGenerator() {
+        Location location = generator.getLocation();
+        
+        if (plugin.getGeneratorManager().removeGenerator(location)) {
+            DisplayManager.removeHologram(location);
+            
+            ItemStack generatorItem = plugin.getUtils().getGeneratorItemManager().createGeneratorItem(generator.getType());
+            
+            HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(generatorItem);
+            
+            if (leftover.isEmpty()) {
+                player.sendMessage(ChatColor.GREEN + "Generator added to your inventory!");
+            } else {
+                location.getWorld().dropItemNaturally(
+                    location.clone().add(0.5, 0.5, 0.5), 
+                    generatorItem
+                );
+                player.sendMessage(ChatColor.YELLOW + "Your inventory was full, the generator was dropped on the ground!");
+            }
+            
+            player.closeInventory();
+        } else {
+            player.sendMessage(ChatColor.RED + "Failed to remove the generator!");
+            refreshGUI();
+        }
     }
     
     private void updatePlayerEarnings(UUID playerUUID, double amount) {

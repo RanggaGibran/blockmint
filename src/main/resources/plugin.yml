@@ -1,44 +1,47 @@
 name: BlockMint
+version: '1.0.0'
 main: id.rnggagib.BlockMint
-version: ${project.version}
-api-version: 1.15
-authors: [rnggagib]
-description: A Skyblock generator plugin that turns blocks into currency
+api-version: '1.20'
 depend: [Vault]
 softdepend: [PlaceholderAPI]
+authors: [RnggaGib]
+description: 'A plugin that lets players place automated generators that generate money over time.'
 
 commands:
   blockmint:
-    description: Main command for BlockMint plugin
-    aliases: [bm, gens, gen]
-    usage: /blockmint help
+    description: Main command for BlockMint
+    aliases: [bm, generators]
+    usage: /<command> [subcommand] [args]
+    permission: blockmint.command
 
 permissions:
-  blockmint.admin.*:
-    description: Grants all admin permissions
-    default: op
-    children:
-      blockmint.admin.reload: true
-      blockmint.admin.give: true
-      blockmint.admin.remove: true
-  blockmint.user.*:
-    description: Grants all user permissions
+  blockmint.command:
+    description: Allows using the main BlockMint command
     default: true
-    children:
-      blockmint.use: true
-      blockmint.stats: true
   blockmint.use:
-    description: Allows using basic features of BlockMint
+    description: Allows placing and using generators
     default: true
-  blockmint.admin.reload:
-    description: Allows reloading plugin configuration
+  blockmint.admin:
+    description: Gives access to all BlockMint admin commands
     default: op
-  blockmint.admin.give:
+    children:
+      blockmint.command: true
+      blockmint.reload: true
+      blockmint.give: true
+      blockmint.bypass.limit: true
+      blockmint.admin.remove: true
+  blockmint.reload:
+    description: Allows reloading the plugin
+    default: op
+  blockmint.give:
     description: Allows giving generator items to players
     default: op
-  blockmint.admin.remove:
-    description: Allows removing any generator
-    default: op
-  blockmint.stats:
-    description: Allows viewing generator statistics
+  blockmint.upgrade:
+    description: Allows upgrading generators
     default: true
+  blockmint.bypass.limit:
+    description: Bypasses the generator limit
+    default: op
+  blockmint.admin.remove:
+    description: Allows removing other players' generators
+    default: op

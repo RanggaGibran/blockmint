@@ -84,7 +84,8 @@ public class GiveCommand implements SubCommand {
             return;
         }
         
-        ItemStack item = GeneratorItemManager.createGeneratorItem(generatorType);
+        GeneratorItemManager generatorItemManager = new GeneratorItemManager();
+        ItemStack item = generatorItemManager.createGeneratorItem(generatorType);
         item.setAmount(amount);
         
         HashMap<Integer, ItemStack> failedItems = target.getInventory().addItem(item);

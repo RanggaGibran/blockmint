@@ -1,8 +1,10 @@
 package id.rnggagib.blockmint.generators;
 
 import id.rnggagib.BlockMint;
+import id.rnggagib.blockmint.utils.DisplayManager;
 import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -25,73 +27,107 @@ public class GeneratorManager {
     
     public void loadGenerators() {
         loadGeneratorTypes();
-        loadActiveGenerators();
+        loadGeneratorsFromDatabase();
     }
     
-    public void reloadGenerators() {
+    public void loadGeneratorTypes() {
         generatorTypes.clear();
-        loadGeneratorTypes();
-    }
-    
-    private void loadGeneratorTypes() {
-        ConfigurationSection section = plugin.getConfigManager().getGeneratorsConfig().getConfigurationSection("generators");
-        if (section == null) {
-            plugin.getLogger().warning("No generators defined in generators.yml!");
+        
+        FileConfiguration config = plugin.getConfigManager().getGeneratorsConfig();
+        
+        plugin.getLogger().info("Loading generator types from configuration...");
+        
+        ConfigurationSection typesSection = config.getConfigurationSection("types");
+        
+        if (typesSection == null) {
+            plugin.getLogger().warning("No generator types found in configuration! Section 'types' is missing");
+            plugin.getLogger().info("Available sections: " + config.getKeys(false));
             return;
         }
         
-        for (String key : section.getKeys(false)) {
-            ConfigurationSection genSection = section.getConfigurationSection(key);
-            if (genSection == null) continue;
+        for (String key : typesSection.getKeys(false)) {
+            ConfigurationSection typeSection = typesSection.getConfigurationSection(key);
+            if (typeSection == null) {
+                plugin.getLogger().warning("Type section for " + key + " is null, skipping");
+                continue;
+            }
             
-            GeneratorType generatorType = new GeneratorType(
-                    key,
-                    genSection.getString("name", key),
-                    genSection.getString("material"),
-                    genSection.getDouble("base-value", 10.0),
-                    genSection.getDouble("value-multiplier", 1.5),
-                    genSection.getInt("max-level", 10),
-                    genSection.getLong("generation-time", 60),
-                    genSection.getString("texture-value", "")
+            plugin.getLogger().info("Processing generator type: " + key);
+            
+            String name = typeSection.getString("name", key);
+            String material = typeSection.getString("material", "DIAMOND_BLOCK");
+            double baseValue = typeSection.getDouble("base-value", 10.0);
+            int generationTime = typeSection.getInt("generation-time", 300);
+            double valueMultiplier = typeSection.getDouble("value-multiplier", 1.5);
+            int maxLevel = typeSection.getInt("max-level", 10);
+            double upgradeCostBase = typeSection.getDouble("upgrade-cost-base", 100.0);
+            double upgradeCostMultiplier = typeSection.getDouble("upgrade-cost-multiplier", 1.8);
+            String textureValue = typeSection.getString("texture-value", "");
+            
+            GeneratorType type = new GeneratorType(
+                    key, 
+                    name, 
+                    material, 
+                    baseValue, 
+                    generationTime, 
+                    valueMultiplier, 
+                    maxLevel, 
+                    upgradeCostBase, 
+                    upgradeCostMultiplier,
+                    textureValue
             );
             
-            generatorTypes.put(key, generatorType);
-            plugin.getLogger().info("Loaded generator type: " + key);
+            generatorTypes.put(key, type);
+            plugin.getLogger().info("Successfully loaded generator type: " + key);
         }
+        
+        plugin.getLogger().info("Loaded " + generatorTypes.size() + " generator types!");
     }
     
-    private void loadActiveGenerators() {
+    public void loadGeneratorsFromDatabase() {
         activeGenerators.clear();
+        DisplayManager.removeAllHolograms();
         
         try {
-            ResultSet rs = plugin.getDatabaseManager().executeQuery("SELECT * FROM generators");
+            PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
+                    "SELECT * FROM generators"
+            );
+            
+            ResultSet rs = stmt.executeQuery();
+            
+            int count = 0;
             while (rs.next()) {
+                int id = rs.getInt("id");
+                UUID owner = UUID.fromString(rs.getString("owner"));
                 String world = rs.getString("world");
-                int x = rs.getInt("x");
-                int y = rs.getInt("y");
-                int z = rs.getInt("z");
+                double x = rs.getDouble("x");
+                double y = rs.getDouble("y");
+                double z = rs.getDouble("z");
                 String type = rs.getString("type");
-                String owner = rs.getString("owner");
                 int level = rs.getInt("level");
+                long lastGeneration = rs.getLong("last_generation");
                 
                 if (!generatorTypes.containsKey(type)) {
-                    plugin.getLogger().warning("Unknown generator type: " + type);
+                    plugin.getLogger().warning("Unknown generator type: " + type + " for generator " + id);
                     continue;
                 }
                 
+                GeneratorType generatorType = generatorTypes.get(type);
                 Location location = new Location(plugin.getServer().getWorld(world), x, y, z);
-                Generator generator = new Generator(
-                        rs.getInt("id"),
-                        UUID.fromString(owner),
-                        location,
-                        generatorTypes.get(type),
-                        level
-                );
+                
+                Generator generator = new Generator(id, owner, location, generatorType, level);
+                generator.setLastGeneration(lastGeneration);
                 
                 activeGenerators.put(location, generator);
+                
+                if (location.getWorld() != null && location.getChunk().isLoaded()) {
+                    DisplayManager.createHologram(plugin, location, generatorType, level);
+                }
+                
+                count++;
             }
             
-            plugin.getLogger().info("Loaded " + activeGenerators.size() + " active generators");
+            plugin.getLogger().info("Loaded " + count + " generators from database.");
             
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Error loading generators from database!", e);
@@ -103,27 +139,32 @@ public class GeneratorManager {
             return false;
         }
         
-        if (activeGenerators.containsKey(location)) {
-            return false;
-        }
-        
-        GeneratorType generatorType = generatorTypes.get(type);
-        
         try {
             PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
-                    "INSERT INTO generators (owner, world, x, y, z, type, level) VALUES (?, ?, ?, ?, ?, ?, 1)"
+                    "INSERT INTO generators (owner, world, x, y, z, type, level, last_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    true
             );
+            
             stmt.setString(1, owner.toString());
             stmt.setString(2, location.getWorld().getName());
-            stmt.setInt(3, location.getBlockX());
-            stmt.setInt(4, location.getBlockY());
-            stmt.setInt(5, location.getBlockZ());
+            stmt.setDouble(3, location.getX());
+            stmt.setDouble(4, location.getY());
+            stmt.setDouble(5, location.getZ());
             stmt.setString(6, type);
-            stmt.executeUpdate();
+            stmt.setInt(7, 1);
+            stmt.setLong(8, System.currentTimeMillis());
             
-            ResultSet rs = stmt.getGeneratedKeys();
-            if (rs.next()) {
-                int id = rs.getInt(1);
+            int affectedRows = stmt.executeUpdate();
+            
+            if (affectedRows > 0) {
+                ResultSet rs = stmt.getGeneratedKeys();
+                int id = -1;
+                
+                if (rs.next()) {
+                    id = rs.getInt(1);
+                }
+                
+                GeneratorType generatorType = generatorTypes.get(type);
                 Generator generator = new Generator(id, owner, location, generatorType, 1);
                 activeGenerators.put(location, generator);
                 
@@ -147,12 +188,17 @@ public class GeneratorManager {
             PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
                     "DELETE FROM generators WHERE id = ?"
             );
-            stmt.setInt(1, generator.getId());
-            stmt.executeUpdate();
             
-            activeGenerators.remove(location);
-            updatePlayerStats(generator.getOwner());
-            return true;
+            stmt.setInt(1, generator.getId());
+            
+            int affectedRows = stmt.executeUpdate();
+            
+            if (affectedRows > 0) {
+                activeGenerators.remove(location);
+                updatePlayerStats(generator.getOwner());
+                return true;
+            }
+            
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Error removing generator from database!", e);
         }
@@ -160,37 +206,50 @@ public class GeneratorManager {
         return false;
     }
     
-    public Generator getGenerator(Location location) {
-        return activeGenerators.get(location);
+    private void updatePlayerStats(UUID playerUUID) {
+        try {
+            PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
+                    "INSERT INTO player_stats (uuid, player_name, generators_owned, total_earnings) " +
+                    "VALUES (?, ?, 1, 0.0) " +
+                    "ON CONFLICT(uuid) DO UPDATE SET generators_owned = generators_owned + 1"
+            );
+            
+            stmt.setString(1, playerUUID.toString());
+            stmt.setString(2, plugin.getServer().getOfflinePlayer(playerUUID).getName());
+            stmt.executeUpdate();
+            
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not update player stats: " + e.getMessage());
+        }
     }
     
-    public Map<String, GeneratorType> getGeneratorTypes() {
-        return generatorTypes;
+    public void reloadGenerators() {
+        loadGeneratorTypes();
+        loadGeneratorsFromDatabase();
+    }
+    
+    public Generator getGenerator(Location location) {
+        return activeGenerators.get(location);
     }
     
     public Map<Location, Generator> getActiveGenerators() {
         return activeGenerators;
     }
     
-    private void updatePlayerStats(UUID uuid) {
-        try {
-            int count = 0;
-            for (Generator generator : activeGenerators.values()) {
-                if (generator.getOwner().equals(uuid)) {
-                    count++;
-                }
-            }
+    public Map<String, GeneratorType> getGeneratorTypes() {
+        return generatorTypes;
+    }
+    
+    public void recreateHolograms() {
+        DisplayManager.removeAllHolograms();
+        
+        for (Map.Entry<Location, Generator> entry : activeGenerators.entrySet()) {
+            Location location = entry.getKey();
+            Generator generator = entry.getValue();
             
-            PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
-                    "INSERT OR REPLACE INTO player_stats (uuid, player_name, generators_owned) " +
-                            "VALUES (?, ?, ?)"
-            );
-            stmt.setString(1, uuid.toString());
-            stmt.setString(2, plugin.getServer().getOfflinePlayer(uuid).getName());
-            stmt.setInt(3, count);
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Error updating player stats!", e);
+            if (location.getWorld() != null && location.getChunk().isLoaded()) {
+                DisplayManager.createHologram(plugin, location, generator.getType(), generator.getLevel());
+            }
         }
     }
 }

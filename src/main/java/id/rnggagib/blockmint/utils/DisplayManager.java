@@ -4,9 +4,6 @@ import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.generators.GeneratorType;
 
-import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.properties.Property;
-
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.ArmorStand;
@@ -14,14 +11,11 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Item;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.util.Vector;
 
-import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 public class DisplayManager {
     
@@ -70,7 +64,7 @@ public class DisplayManager {
         
         Item displayItem = location.getWorld().dropItem(
                 hologramLoc.clone().add(0, -0.3, 0), 
-                createSkullItem(type.getTextureValue()));
+                new ItemStack(Material.valueOf(type.getMaterial())));
         displayItem.setPickupDelay(Integer.MAX_VALUE);
         displayItem.setVelocity(new Vector(0, 0, 0));
         displayItem.setGravity(false);
@@ -141,29 +135,5 @@ public class DisplayManager {
         stand.setSmall(true);
         stand.setInvulnerable(true);
         stand.setCollidable(false);
-    }
-    
-    private static ItemStack createSkullItem(String textureValue) {
-        ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-        
-        if (textureValue == null || textureValue.isEmpty()) {
-            return head;
-        }
-        
-        SkullMeta meta = (SkullMeta) head.getItemMeta();
-        GameProfile profile = new GameProfile(UUID.randomUUID(), "Generator");
-        profile.getProperties().put("textures", new Property("textures", textureValue));
-        
-        try {
-            Field profileField = meta.getClass().getDeclaredField("profile");
-            profileField.setAccessible(true);
-            profileField.set(meta, profile);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return head;
-        }
-        
-        head.setItemMeta(meta);
-        return head;
     }
 }

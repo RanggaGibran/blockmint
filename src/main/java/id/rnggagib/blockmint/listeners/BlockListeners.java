@@ -4,17 +4,19 @@ import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.generators.GeneratorType;
 import id.rnggagib.blockmint.utils.DisplayManager;
-
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.ItemStack;
 
 import java.sql.PreparedStatement;
 import java.util.HashMap;
@@ -56,6 +58,7 @@ public class BlockListeners implements Listener {
         }
         
         int maxGenerators = plugin.getConfigManager().getConfig().getInt("settings.max-generators-per-player", 10);
+        
         if (maxGenerators > 0) {
             int playerGenerators = countPlayerGenerators(player.getUniqueId());
             if (playerGenerators >= maxGenerators && !player.hasPermission("blockmint.bypass.limit")) {
@@ -127,6 +130,16 @@ public class BlockListeners implements Listener {
         
         event.setCancelled(true);
         
+        if (event.getAction() == Action.LEFT_CLICK_BLOCK && player.isSneaking()) {
+            if (generator.getOwner().equals(player.getUniqueId()) || 
+                player.hasPermission("blockmint.admin.remove")) {
+                takeGeneratorToInventory(player, generator);
+            } else {
+                plugin.getMessageManager().send(player, "general.no-permission");
+            }
+            return;
+        }
+        
         switch (event.getAction()) {
             case RIGHT_CLICK_BLOCK:
                 if (player.isSneaking() && player.hasPermission("blockmint.upgrade")) {
@@ -140,6 +153,30 @@ public class BlockListeners implements Listener {
                 break;
             default:
                 break;
+        }
+    }
+    
+    private void takeGeneratorToInventory(Player player, Generator generator) {
+        Location location = generator.getLocation();
+        
+        if (plugin.getGeneratorManager().removeGenerator(location)) {
+            DisplayManager.removeHologram(location);
+            
+            ItemStack generatorItem = plugin.getUtils().getGeneratorItemManager().createGeneratorItem(generator.getType());
+            
+            HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(generatorItem);
+            
+            if (leftover.isEmpty()) {
+                player.sendMessage(ChatColor.GREEN + "Generator added to your inventory!");
+            } else {
+                location.getWorld().dropItemNaturally(
+                    location.clone().add(0.5, 0.5, 0.5), 
+                    generatorItem
+                );
+                player.sendMessage(ChatColor.YELLOW + "Your inventory was full, the generator was dropped on the ground!");
+            }
+        } else {
+            plugin.getMessageManager().send(player, "general.generator-removed-failed");
         }
     }
     

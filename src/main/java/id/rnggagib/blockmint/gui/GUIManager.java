@@ -27,7 +27,7 @@ public class GUIManager {
     public void openGeneratorManagement(Player player) {
         GeneratorListGUI gui = new GeneratorListGUI(plugin, player, 0);
         gui.open();
-        activeGuis.put(player.getUniqueId().toString(), gui);
+        registerActiveGUI(player.getUniqueId().toString(), gui);
     }
     
     public BaseGUI getActiveGUI(String uuid) {
@@ -95,7 +95,7 @@ public class GUIManager {
         
         lore.add("");
         lore.add("&eClick &7to view more options");
-        lore.add("&eShift-Click &7to teleport to generator");
+        lore.add("&eShift+Right Click &7to teleport to generator");
         
         return createItem(material, name, lore);
     }
