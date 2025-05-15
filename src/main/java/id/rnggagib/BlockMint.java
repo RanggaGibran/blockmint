@@ -104,6 +104,10 @@ public class BlockMint extends JavaPlugin {
         return messageManager;
     }
     
+    public CommandManager getCommandManager() {
+        return commandManager;
+    }
+    
     public DatabaseManager getDatabaseManager() {
         return databaseManager;
     }
