@@ -17,6 +17,20 @@ settings:
   # Whether to automatically collect from generators
   auto-collect: false
   
+  # Range for auto-collection (in blocks)
+  auto-collect-range: 10.0
+  
+  # Visual effects settings
+  visual-effects:
+    # Whether to show particles for ready generators
+    show-particles: true
+    
+    # Whether to play sounds for ready generators
+    play-sounds: true
+    
+    # Whether to glow blocks when ready
+    glow-when-ready: true
+    
   # Item display settings
   display-item:
     # Whether to use custom model data for generator displays
