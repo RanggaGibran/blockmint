@@ -10,6 +10,7 @@ general:
   invalid-block: "<prefix> <red>This block can't be used as a generator.</red>"
   generator-placed: "<prefix> <green>Generator placed successfully!</green>"
   generator-removed: "<prefix> <green>Generator removed successfully!</green>"
+  generator-removed-failed: "<prefix> <red>Failed to remove the generator.</red>"
   generator-limit-reached: "<prefix> <red>You've reached your generator limit of {limit}!</red>"
   collect-success: "<prefix> <green>Collected {amount} from your generator!</green>"
   not-ready: "<prefix> <yellow>This generator isn't ready yet. {time} remaining.</yellow>"
@@ -17,6 +18,7 @@ general:
   upgrade-success: "<prefix> <green>Generator upgraded to level {level}!</green>"
   max-level-reached: "<prefix> <gold>This generator is already at maximum level!</gold>"
   not-enough-money: "<prefix> <red>You need {cost} to do this!</red>"
+  generator-collect-confirm: "<prefix> <yellow>Shift+Left click again within 5 seconds to collect this generator to inventory.</yellow>"
 
 # Command Messages
 commands:
@@ -38,22 +40,17 @@ commands:
   give-received: "<prefix> <green>You received {amount} {type} generator(s)!</green>"
   invalid-player: "<prefix> <red>Player not found.</red>"
   invalid-type: "<prefix> <red>Invalid generator type.</red>"
-  invalid-amount: "<prefix> <red>Amount must be a positive number.</red>"
-  invalid-number: "<prefix> <red>Please enter a valid number.</red>"
-  no-generators: "<prefix> <yellow>There are no generator types available.</yellow>"
-  list-header: "<gradient:#FF5F6D:#FFC371>====== Available Generator Types ======</gradient>"
   list-item: "<yellow>{name}</yellow> - <white>Base Value: ${value}</white> <gray>({material})</gray>"
 
-# Generator Display Messages
+# Generator Messages
 generator:
-  info-header: "<gradient:#FF5F6D:#FFC371>====== Generator Info ======</gradient>"
+  hologram-title: "<gradient:#FFCB6B:#FFE66D>{name} Generator</gradient>"
+  hologram-level: "<yellow>Level: {level}/{max-level}</yellow>"
+  hologram-owner: "<white>Owner: {owner}</white>"
+  hologram-ready: "<green>✓ Ready to collect!</green>"
+  hologram-progress: "<aqua>Progress: {percent}%</aqua>"
+  info-header: "<gradient:#FF5F6D:#FFC371>===== {name} Generator =====</gradient>"
   info-level: "<yellow>Level:</yellow> <white>{level}/{max-level}</white>"
   info-value: "<yellow>Value:</yellow> <white>${value}</white>"
   info-owner: "<yellow>Owner:</yellow> <white>{owner}</white>"
   info-upgrade: "<yellow>Upgrade Cost:</yellow> <white>${upgrade-cost}</white>"
-  hologram-title: "<gradient:#FF5F6D:#FFC371>{name}</gradient>"
-  hologram-level: "<yellow>Level {level}/{max-level}</yellow>"
-  hologram-value: "<white>Value: ${value}</white>"
-  hologram-owner: "<gray>Owner: {owner}</gray>"
-  hologram-progress: "<gray>Generating... {percent}%</gray>"
-  hologram-ready: "<green>Click to collect!</green>"

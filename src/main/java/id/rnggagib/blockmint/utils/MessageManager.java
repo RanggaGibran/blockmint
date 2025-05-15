@@ -49,6 +49,10 @@ public class MessageManager {
     
     public String formatMessage(String message, Map<String, String> placeholders) {
         String formatted = message;
+        
+        String prefix = messageCache.getOrDefault("prefix", "<gradient:#FF5F6D:#FFC371>BlockMint</gradient> <dark_gray>»</dark_gray> ");
+        formatted = formatted.replace("<prefix>", prefix);
+        
         if (placeholders != null) {
             for (Map.Entry<String, String> placeholder : placeholders.entrySet()) {
                 formatted = formatted.replace("{" + placeholder.getKey() + "}", placeholder.getValue());

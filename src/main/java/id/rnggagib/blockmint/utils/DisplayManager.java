@@ -13,13 +13,17 @@ import org.bukkit.entity.Item;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Vector;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 public class DisplayManager {
     
     private static final Map<Location, List<Entity>> holograms = new HashMap<>();
+    private static final Map<UUID, Long> itemAnchorTimers = new HashMap<>();
+    private static final long REANCHOR_TIME_MS = 5000;
     
     public static void createHologram(BlockMint plugin, Location location, GeneratorType type, int level) {
         removeHologram(location);
@@ -71,7 +75,26 @@ public class DisplayManager {
         displayItem.setGlowing(true);
         displayItem.setCustomNameVisible(false);
         
-        holograms.put(location, List.of(titleStand, levelStand, ownerStand, displayItem));
+        if (displayItem.getItemStack().getMaxStackSize() > 1) {
+            ItemStack itemStack = displayItem.getItemStack();
+            itemStack.setAmount(1);
+            displayItem.setItemStack(itemStack);
+        }
+        
+        itemAnchorTimers.put(displayItem.getUniqueId(), System.currentTimeMillis());
+        List<Entity> hologramEntities = new ArrayList<>();
+        hologramEntities.add(titleStand);
+        hologramEntities.add(levelStand);
+        hologramEntities.add(ownerStand);
+        hologramEntities.add(displayItem);
+        
+        holograms.put(location, hologramEntities);
+        
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (holograms.containsKey(location)) {
+                resetItemPosition(plugin, location);
+            }
+        }, 20L);
     }
     
     public static void updateHologram(BlockMint plugin, Generator generator) {
@@ -108,6 +131,34 @@ public class DisplayManager {
                     .replace("{percent}", String.valueOf(percent));
             ownerStand.setCustomName(plugin.getMessageManager().stripMiniMessage(progressText));
         }
+        
+        if (entities.size() >= 4 && entities.get(3) instanceof Item) {
+            Item displayItem = (Item) entities.get(3);
+            UUID itemUUID = displayItem.getUniqueId();
+            
+            if (!itemAnchorTimers.containsKey(itemUUID) || 
+                System.currentTimeMillis() - itemAnchorTimers.get(itemUUID) > REANCHOR_TIME_MS) {
+                resetItemPosition(plugin, location);
+                itemAnchorTimers.put(itemUUID, System.currentTimeMillis());
+            }
+        }
+    }
+    
+    private static void resetItemPosition(BlockMint plugin, Location location) {
+        if (!holograms.containsKey(location)) return;
+        
+        List<Entity> entities = holograms.get(location);
+        if (entities.size() < 4 || !(entities.get(3) instanceof Item)) return;
+        
+        Item displayItem = (Item) entities.get(3);
+        Location idealItemLoc = location.clone().add(0.5, 
+                plugin.getConfigManager().getConfig().getDouble("settings.display-item.height-offset", 0.8) - 0.3, 
+                0.5);
+        
+        if (displayItem.getLocation().distanceSquared(idealItemLoc) > 0.1) {
+            displayItem.teleport(idealItemLoc);
+            displayItem.setVelocity(new Vector(0, 0, 0));
+        }
     }
     
     public static void removeHologram(Location location) {
@@ -116,15 +167,28 @@ public class DisplayManager {
         }
         
         List<Entity> entities = holograms.get(location);
-        entities.forEach(Entity::remove);
+        for (Entity entity : entities) {
+            if (entity instanceof Item) {
+                itemAnchorTimers.remove(entity.getUniqueId());
+            }
+            entity.remove();
+        }
+        
         holograms.remove(location);
     }
     
     public static void removeAllHolograms() {
         for (List<Entity> entities : holograms.values()) {
-            entities.forEach(Entity::remove);
+            for (Entity entity : entities) {
+                if (entity instanceof Item) {
+                    itemAnchorTimers.remove(entity.getUniqueId());
+                }
+                entity.remove();
+            }
         }
+        
         holograms.clear();
+        itemAnchorTimers.clear();
     }
     
     private static void setupArmorStand(ArmorStand stand) {

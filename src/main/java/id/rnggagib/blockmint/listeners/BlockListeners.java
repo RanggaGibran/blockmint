@@ -6,6 +6,7 @@ import id.rnggagib.blockmint.generators.GeneratorType;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -19,6 +20,7 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -26,6 +28,8 @@ import java.util.UUID;
 public class BlockListeners implements Listener {
     
     private final BlockMint plugin;
+    private final Map<UUID, Long> lastPickupAttempt = new HashMap<>();
+    private final long CONFIRMATION_DELAY_MS = 3000;
     
     public BlockListeners(BlockMint plugin) {
         this.plugin = plugin;
@@ -58,7 +62,6 @@ public class BlockListeners implements Listener {
         }
         
         int maxGenerators = plugin.getConfigManager().getConfig().getInt("settings.max-generators-per-player", 10);
-        
         if (maxGenerators > 0) {
             int playerGenerators = countPlayerGenerators(player.getUniqueId());
             if (playerGenerators >= maxGenerators && !player.hasPermission("blockmint.bypass.limit")) {
@@ -95,17 +98,45 @@ public class BlockListeners implements Listener {
             return;
         }
         
+        event.setCancelled(true);
+        
         if (!generator.getOwner().equals(player.getUniqueId()) && 
             !player.hasPermission("blockmint.admin.remove")) {
-            event.setCancelled(true);
             plugin.getMessageManager().send(player, "general.no-permission");
             return;
         }
         
-        boolean success = plugin.getGeneratorManager().removeGenerator(location);
-        if (success) {
-            plugin.getMessageManager().send(player, "general.generator-removed");
-            DisplayManager.removeHologram(location);
+        UUID playerUUID = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        
+        if (lastPickupAttempt.containsKey(playerUUID) && 
+            now - lastPickupAttempt.get(playerUUID) < CONFIRMATION_DELAY_MS) {
+            
+            boolean success = plugin.getGeneratorManager().removeGenerator(location);
+            if (success) {
+                ItemStack generatorItem = plugin.getUtils().getGeneratorItemManager().createGeneratorItem(generator.getType());
+                HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(generatorItem);
+                
+                if (leftover.isEmpty()) {
+                    plugin.getMessageManager().send(player, "general.generator-collected");
+                } else {
+                    location.getWorld().dropItemNaturally(
+                        location.clone().add(0.5, 0.5, 0.5), 
+                        generatorItem
+                    );
+                    plugin.getMessageManager().send(player, "general.generator-collected-inventory-full");
+                }
+                
+                DisplayManager.removeHologram(location);
+                block.setType(Material.AIR);
+            } else {
+                plugin.getMessageManager().send(player, "general.generator-removed-failed");
+            }
+            
+            lastPickupAttempt.remove(playerUUID);
+        } else {
+            lastPickupAttempt.put(playerUUID, now);
+            plugin.getMessageManager().send(player, "general.generator-collect-confirm");
         }
     }
     
@@ -130,16 +161,6 @@ public class BlockListeners implements Listener {
         
         event.setCancelled(true);
         
-        if (event.getAction() == Action.LEFT_CLICK_BLOCK && player.isSneaking()) {
-            if (generator.getOwner().equals(player.getUniqueId()) || 
-                player.hasPermission("blockmint.admin.remove")) {
-                takeGeneratorToInventory(player, generator);
-            } else {
-                plugin.getMessageManager().send(player, "general.no-permission");
-            }
-            return;
-        }
-        
         switch (event.getAction()) {
             case RIGHT_CLICK_BLOCK:
                 if (player.isSneaking() && player.hasPermission("blockmint.upgrade")) {
@@ -156,28 +177,14 @@ public class BlockListeners implements Listener {
         }
     }
     
-    private void takeGeneratorToInventory(Player player, Generator generator) {
-        Location location = generator.getLocation();
-        
-        if (plugin.getGeneratorManager().removeGenerator(location)) {
-            DisplayManager.removeHologram(location);
-            
-            ItemStack generatorItem = plugin.getUtils().getGeneratorItemManager().createGeneratorItem(generator.getType());
-            
-            HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(generatorItem);
-            
-            if (leftover.isEmpty()) {
-                player.sendMessage(ChatColor.GREEN + "Generator added to your inventory!");
-            } else {
-                location.getWorld().dropItemNaturally(
-                    location.clone().add(0.5, 0.5, 0.5), 
-                    generatorItem
-                );
-                player.sendMessage(ChatColor.YELLOW + "Your inventory was full, the generator was dropped on the ground!");
+    private int countPlayerGenerators(UUID playerUUID) {
+        int count = 0;
+        for (Generator generator : plugin.getGeneratorManager().getActiveGenerators().values()) {
+            if (generator.getOwner().equals(playerUUID)) {
+                count++;
             }
-        } else {
-            plugin.getMessageManager().send(player, "general.generator-removed-failed");
         }
+        return count;
     }
     
     private void collectGenerator(Player player, Generator generator) {
@@ -232,7 +239,7 @@ public class BlockListeners implements Listener {
             stmt.setInt(1, newLevel);
             stmt.setInt(2, generator.getId());
             stmt.executeUpdate();
-        } catch (Exception e) {
+        } catch (SQLException e) {
             plugin.getLogger().severe("Could not update generator level in database: " + e.getMessage());
             return;
         }
@@ -267,16 +274,6 @@ public class BlockListeners implements Listener {
         }
     }
     
-    private int countPlayerGenerators(UUID playerUUID) {
-        int count = 0;
-        for (Generator generator : plugin.getGeneratorManager().getActiveGenerators().values()) {
-            if (generator.getOwner().equals(playerUUID)) {
-                count++;
-            }
-        }
-        return count;
-    }
-    
     private void updatePlayerEarnings(UUID playerUUID, double amount) {
         try {
             PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
@@ -285,7 +282,7 @@ public class BlockListeners implements Listener {
             stmt.setDouble(1, amount);
             stmt.setString(2, playerUUID.toString());
             stmt.executeUpdate();
-        } catch (Exception e) {
+        } catch (SQLException e) {
             plugin.getLogger().severe("Could not update player earnings in database: " + e.getMessage());
         }
     }
