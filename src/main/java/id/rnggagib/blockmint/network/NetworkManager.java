@@ -3,6 +3,8 @@ package id.rnggagib.blockmint.network;
 import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.utils.DisplayManager;
+import id.rnggagib.blockmint.network.permissions.NetworkPermission;
+import id.rnggagib.blockmint.network.permissions.NetworkPermissionManager;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
@@ -29,6 +31,7 @@ public class NetworkManager {
     private final Map<Integer, Integer> generatorNetworkMap = new ConcurrentHashMap<>();
     private BukkitTask networkVisualizerTask;
     private final Set<UUID> playersViewingNetworks = new HashSet<>();
+    private NetworkPermissionManager permissionManager;
     
     public NetworkManager(BlockMint plugin) {
         this.plugin = plugin;
@@ -37,6 +40,8 @@ public class NetworkManager {
     public void initialize() {
         createNetworkTables();
         loadNetworksFromDatabase();
+        permissionManager = new NetworkPermissionManager(plugin);
+        permissionManager.initialize();
         startNetworkVisualizerTask();
     }
     
@@ -160,6 +165,9 @@ public class NetworkManager {
                 NetworkBlock network = new NetworkBlock(networkId, location, owner, name, tier);
                 networks.put(networkId, network);
                 
+                // Add the owner as a member with owner permissions in the database for consistency
+                permissionManager.addMember(networkId, owner, plugin.getServer().getOfflinePlayer(owner).getName(), NetworkPermission.OWNER);
+                
                 plugin.getLogger().fine("Created network " + networkId + " for player " + owner);
                 return network;
             }
@@ -182,6 +190,10 @@ public class NetworkManager {
         }
         
         if (network.isMaxCapacity()) {
+            return false;
+        }
+        
+        if (!checkPermission(networkId, generator.getOwner(), NetworkPermission.USE)) {
             return false;
         }
         
@@ -221,6 +233,20 @@ public class NetworkManager {
         NetworkBlock network = networks.get(networkId);
         if (network == null) return false;
         
+        Generator generator = findGeneratorById(generatorId);
+        if (generator == null) return false;
+        
+        UUID playerUuid = generator.getOwner();
+        NetworkPermission requiredPermission = NetworkPermission.USE;
+        
+        if (!network.getOwner().equals(playerUuid)) {
+            requiredPermission = NetworkPermission.MANAGE;
+        }
+        
+        if (!checkPermission(networkId, playerUuid, requiredPermission)) {
+            return false;
+        }
+        
         try {
             PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
                     "DELETE FROM network_generators WHERE network_id = ? AND generator_id = ?"
@@ -235,7 +261,6 @@ public class NetworkManager {
                 network.removeGenerator(generatorId);
                 generatorNetworkMap.remove(generatorId);
                 
-                Generator generator = findGeneratorById(generatorId);
                 if (generator != null) {
                     DisplayManager.updateHologram(plugin, generator);
                 }
@@ -271,6 +296,8 @@ public class NetworkManager {
                         DisplayManager.updateHologram(plugin, generator);
                     }
                 }
+                
+                permissionManager.handleNetworkDeletion(networkId);
                 
                 networks.remove(networkId);
                 return true;
@@ -515,10 +542,23 @@ public class NetworkManager {
         return null;
     }
     
+    private boolean checkPermission(int networkId, UUID playerUuid, NetworkPermission requiredPermission) {
+        Player player = plugin.getServer().getPlayer(playerUuid);
+        if (player != null && player.hasPermission("blockmint.admin.network.bypass")) {
+            return true;
+        }
+        
+        return permissionManager.checkPermission(networkId, playerUuid, requiredPermission);
+    }
+    
     public void shutdown() {
         if (networkVisualizerTask != null) {
             networkVisualizerTask.cancel();
             networkVisualizerTask = null;
+        }
+        
+        if (permissionManager != null) {
+            permissionManager.shutdown();
         }
         
         networks.clear();
@@ -534,5 +574,9 @@ public class NetworkManager {
         for (NetworkBlock network : networks.values()) {
             network.updateBlockAppearance();
         }
+    }
+    
+    public NetworkPermissionManager getPermissionManager() {
+        return permissionManager;
     }
 }

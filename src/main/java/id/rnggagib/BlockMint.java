@@ -55,6 +55,7 @@ public class BlockMint extends JavaPlugin {
         }
         
         loadManagers();
+        DisplayManager.initialize(this);
         registerCommands();
         registerListeners();
         startTasks();

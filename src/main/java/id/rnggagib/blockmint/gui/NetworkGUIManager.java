@@ -67,6 +67,19 @@ public class NetworkGUIManager {
         );
         inventory.setItem(8, statsItem);
         
+        // Add permissions button
+        ItemStack permissionsItem = createItem(
+                Material.WRITABLE_BOOK,
+                ChatColor.LIGHT_PURPLE + "Manage Permissions",
+                List.of(
+                    ChatColor.GRAY + "Control who can access",
+                    ChatColor.GRAY + "and manage your network",
+                    "",
+                    ChatColor.YELLOW + "Click to manage permissions"
+                )
+        );
+        inventory.setItem(9, permissionsItem);
+        
         ItemStack visualizeItem = createItem(
                 Material.ENDER_EYE,
                 ChatColor.GREEN + "Toggle Network Visualization",
@@ -257,6 +270,10 @@ public class NetworkGUIManager {
                     openNetworkStatisticsDashboard(player, network);
                     break;
                     
+                case 9:  // Permissions Management
+                    openNetworkPermissionsGUI(player, network);
+                    break;
+                    
                 case 11: // Visualize
                     plugin.getNetworkManager().toggleNetworkVisualization(player);
                     player.closeInventory();
@@ -417,7 +434,8 @@ public class NetworkGUIManager {
     public boolean isNetworkInventory(String title) {
         return title.startsWith(ChatColor.DARK_AQUA + "" + ChatColor.BOLD + "Network: ") || 
                title.startsWith(ChatColor.DARK_AQUA + "Network Generators") ||
-               title.startsWith(ChatColor.DARK_AQUA + "Network Statistics:");
+               title.startsWith(ChatColor.DARK_AQUA + "Network Statistics:") ||
+               title.startsWith(ChatColor.DARK_AQUA + "Network Permissions:");
     }
     
     private void openNetworkStatisticsDashboard(Player player, NetworkBlock network) {
@@ -427,5 +445,14 @@ public class NetworkGUIManager {
         // Register the dashboard as an active GUI to handle interactions
         plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
         plugin.getGUIManager().registerActiveGUI(player.getUniqueId().toString(), dashboardGUI);
+    }
+    
+    private void openNetworkPermissionsGUI(Player player, NetworkBlock network) {
+        NetworkPermissionsGUI gui = new NetworkPermissionsGUI(plugin, player, network);
+        gui.open();
+        
+        // Register the permissions GUI
+        plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
+        plugin.getGUIManager().registerActiveGUI(player.getUniqueId().toString(), gui);
     }
 }
