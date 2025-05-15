@@ -67,6 +67,15 @@ settings:
     initial-delay: 40
     reload-delay: 20
 
+  # Protection settings
+  protection:
+    prevent-explosion: true
+
+  # Debug settings
+  debug:
+    protection: false
+    chunk-events: false
+
 # Economy Settings
 economy:
   # Whether to enable selling generators

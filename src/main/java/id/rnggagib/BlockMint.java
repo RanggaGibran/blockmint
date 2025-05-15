@@ -10,6 +10,7 @@ import id.rnggagib.blockmint.listeners.BlockListeners;
 import id.rnggagib.blockmint.listeners.ChunkListeners;
 import id.rnggagib.blockmint.listeners.GUIListener;
 import id.rnggagib.blockmint.listeners.PlayerListeners;
+import id.rnggagib.blockmint.listeners.ExplosionListener;
 import id.rnggagib.blockmint.placeholders.BlockMintExpansion;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import id.rnggagib.blockmint.utils.MessageManager;
@@ -138,6 +139,7 @@ public class BlockMint extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerListeners(this), this);
         getServer().getPluginManager().registerEvents(new GUIListener(this), this);
         getServer().getPluginManager().registerEvents(new ChunkListeners(this), this);
+        getServer().getPluginManager().registerEvents(new ExplosionListener(this), this);
     }
     
     private void startTasks() {
