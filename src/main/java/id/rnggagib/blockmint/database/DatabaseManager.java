@@ -1,6 +1,7 @@
 package id.rnggagib.blockmint.database;
 
 import id.rnggagib.BlockMint;
+import org.bukkit.configuration.file.FileConfiguration;
 
 import java.io.File;
 import java.sql.Connection;
@@ -15,31 +16,61 @@ public class DatabaseManager {
     
     private final BlockMint plugin;
     private Connection connection;
-    private final String dbFile;
     
     public DatabaseManager(BlockMint plugin) {
         this.plugin = plugin;
-        this.dbFile = "blockmint.db";
     }
     
     public void initialize() {
+        FileConfiguration config = plugin.getConfigManager().getConfig();
+        String dbType = config.getString("database.type", "sqlite");
+        
+        if (dbType.equalsIgnoreCase("mysql")) {
+            initializeMySQL();
+        } else {
+            initializeSQLite();
+        }
+        
+        setupTables();
+    }
+    
+    private void initializeSQLite() {
+        String fileName = plugin.getConfigManager().getConfig().getString("database.file", "blockmint.db");
+        File dataFolder = plugin.getDataFolder();
+        
+        if (!dataFolder.exists()) {
+            dataFolder.mkdir();
+        }
+        
+        String jdbcUrl = "jdbc:sqlite:" + dataFolder + File.separator + fileName;
+        
         try {
-            createConnection();
-            setupTables();
-            plugin.getLogger().info("Database connection established!");
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Failed to initialize database: " + e.getMessage());
+            Class.forName("org.sqlite.JDBC");
+            connection = DriverManager.getConnection(jdbcUrl);
+            plugin.getLogger().info("Successfully connected to SQLite database!");
+        } catch (ClassNotFoundException | SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to initialize SQLite database!", e);
         }
     }
     
-    private void createConnection() throws SQLException {
-        File dataFolder = plugin.getDataFolder();
-        if (!dataFolder.exists()) {
-            dataFolder.mkdirs();
-        }
+    private void initializeMySQL() {
+        FileConfiguration config = plugin.getConfigManager().getConfig();
+        String host = config.getString("database.mysql.host", "localhost");
+        int port = config.getInt("database.mysql.port", 3306);
+        String database = config.getString("database.mysql.database", "blockmint");
+        String username = config.getString("database.mysql.username", "root");
+        String password = config.getString("database.mysql.password", "");
+        boolean useSSL = config.getBoolean("database.mysql.ssl", false);
         
-        String url = "jdbc:sqlite:" + plugin.getDataFolder() + File.separator + dbFile;
-        connection = DriverManager.getConnection(url);
+        String jdbcUrl = "jdbc:mysql://" + host + ":" + port + "/" + database + "?useSSL=" + useSSL;
+        
+        try {
+            Class.forName("com.mysql.jdbc.Driver");
+            connection = DriverManager.getConnection(jdbcUrl, username, password);
+            plugin.getLogger().info("Successfully connected to MySQL database!");
+        } catch (ClassNotFoundException | SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to initialize MySQL database!", e);
+        }
     }
     
     private void setupTables() {
@@ -68,37 +99,39 @@ public class DatabaseManager {
         }
     }
     
-    public Connection getConnection() throws SQLException {
-        if (connection == null || connection.isClosed()) {
-            createConnection();
-        }
-        return connection;
-    }
-    
-    public void close() {
-        try {
-            if (connection != null && !connection.isClosed()) {
-                connection.close();
-                plugin.getLogger().info("Database connection closed.");
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Error closing database connection: " + e.getMessage());
-        }
-    }
-    
     public PreparedStatement prepareStatement(String sql) throws SQLException {
-        return getConnection().prepareStatement(sql);
-    }
-    
-    public PreparedStatement prepareStatement(String sql, boolean returnGeneratedKeys) throws SQLException {
-        return getConnection().prepareStatement(sql, returnGeneratedKeys ? Statement.RETURN_GENERATED_KEYS : Statement.NO_GENERATED_KEYS);
+        if (connection == null || connection.isClosed()) {
+            plugin.getLogger().warning("Database connection lost, reconnecting...");
+            initialize();
+            
+            if (connection == null || connection.isClosed()) {
+                throw new SQLException("Could not reconnect to the database!");
+            }
+        }
+        
+        return connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
     }
     
     public ResultSet executeQuery(String sql) throws SQLException {
-        return getConnection().createStatement().executeQuery(sql);
+        try (PreparedStatement stmt = prepareStatement(sql)) {
+            return stmt.executeQuery();
+        }
     }
     
     public int executeUpdate(String sql) throws SQLException {
-        return getConnection().createStatement().executeUpdate(sql);
+        try (PreparedStatement stmt = prepareStatement(sql)) {
+            return stmt.executeUpdate();
+        }
+    }
+    
+    public void close() {
+        if (connection != null) {
+            try {
+                connection.close();
+                plugin.getLogger().info("Database connection closed successfully.");
+            } catch (SQLException e) {
+                plugin.getLogger().log(Level.SEVERE, "Error closing database connection!", e);
+            }
+        }
     }
 }

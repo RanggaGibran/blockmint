@@ -127,7 +127,6 @@ public class GeneratorManager {
                 
                 activeGenerators.put(location, generator);
                 
-                // Only place blocks and create holograms if the chunk is loaded
                 if (location.getWorld() != null && location.getChunk().isLoaded()) {
                     if (location.getBlock().getType() != Material.valueOf(generatorType.getMaterial())) {
                         location.getBlock().setType(Material.valueOf(generatorType.getMaterial()));
@@ -229,15 +228,16 @@ public class GeneratorManager {
             
             if (rs.next() && rs.getInt(1) > 0) {
                 PreparedStatement updateStmt = plugin.getDatabaseManager().prepareStatement(
-                        "UPDATE player_stats SET generators_placed = generators_placed + 1 WHERE uuid = ?"
+                        "UPDATE player_stats SET generators_owned = generators_owned + 1 WHERE uuid = ?"
                 );
                 updateStmt.setString(1, playerUUID.toString());
                 updateStmt.executeUpdate();
             } else {
                 PreparedStatement insertStmt = plugin.getDatabaseManager().prepareStatement(
-                        "INSERT INTO player_stats (uuid, generators_placed, total_earnings) VALUES (?, 1, 0)"
+                        "INSERT INTO player_stats (uuid, player_name, generators_owned, total_earnings) VALUES (?, ?, 1, 0.0)"
                 );
                 insertStmt.setString(1, playerUUID.toString());
+                insertStmt.setString(2, plugin.getServer().getOfflinePlayer(playerUUID).getName());
                 insertStmt.executeUpdate();
             }
         } catch (SQLException e) {
@@ -269,7 +269,6 @@ public class GeneratorManager {
             Generator generator = entry.getValue();
             
             if (location.getWorld() != null && location.getChunk().isLoaded()) {
-                // Also ensure the physical block is present
                 if (location.getBlock().getType() != Material.valueOf(generator.getType().getMaterial())) {
                     location.getBlock().setType(Material.valueOf(generator.getType().getMaterial()));
                 }

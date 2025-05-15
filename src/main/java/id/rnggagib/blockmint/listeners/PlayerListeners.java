@@ -51,13 +51,13 @@ public class PlayerListeners implements Listener {
                     updateStmt.executeUpdate();
                 }
             } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Error updating player data on join", e);
+                plugin.getLogger().log(Level.SEVERE, "Error updating player stats on join!", e);
             }
         });
     }
     
-    @EventHandler(priority = EventPriority.NORMAL)
+    @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
-        // Any needed cleanup when player leaves
+        // Add any cleanup code here if needed
     }
 }
