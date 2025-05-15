@@ -25,7 +25,7 @@ import java.util.logging.Level;
 public class NetworkManager {
     
     private final BlockMint plugin;
-    private final Map<Integer, GeneratorNetwork> networks = new ConcurrentHashMap<>();
+    private final Map<Integer, NetworkBlock> networks = new ConcurrentHashMap<>();
     private final Map<Integer, Integer> generatorNetworkMap = new ConcurrentHashMap<>();
     private BukkitTask networkVisualizerTask;
     private final Set<UUID> playersViewingNetworks = new HashSet<>();
@@ -47,6 +47,10 @@ public class NetworkManager {
                     "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                     "owner TEXT NOT NULL, " +
                     "name TEXT NOT NULL, " +
+                    "world TEXT NOT NULL, " +
+                    "x INTEGER NOT NULL, " +
+                    "y INTEGER NOT NULL, " +
+                    "z INTEGER NOT NULL, " +
                     "tier TEXT NOT NULL, " +
                     "creation_time BIGINT NOT NULL" +
                     ")"
@@ -82,22 +86,35 @@ public class NetworkManager {
                 int networkId = rs.getInt("id");
                 UUID owner = UUID.fromString(rs.getString("owner"));
                 String name = rs.getString("name");
+                
+                String world = rs.getString("world");
+                int x = rs.getInt("x");
+                int y = rs.getInt("y");
+                int z = rs.getInt("z");
+                
                 NetworkTier tier = NetworkTier.fromName(rs.getString("tier"));
                 long creationTime = rs.getLong("creation_time");
                 
-                GeneratorNetwork network = new GeneratorNetwork(networkId, owner, name, tier);
+                if (plugin.getServer().getWorld(world) == null) {
+                    plugin.getLogger().warning("World " + world + " not found for network " + networkId + ", skipping");
+                    continue;
+                }
+                
+                Location location = new Location(plugin.getServer().getWorld(world), x, y, z);
+                
+                NetworkBlock network = new NetworkBlock(networkId, location, owner, name, tier);
                 networks.put(networkId, network);
                 
                 loadNetworkGenerators(network);
             }
             
-            plugin.getLogger().info("Loaded " + networks.size() + " generator networks");
+            plugin.getLogger().info("Loaded " + networks.size() + " network blocks");
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to load networks from database", e);
         }
     }
     
-    private void loadNetworkGenerators(GeneratorNetwork network) {
+    private void loadNetworkGenerators(NetworkBlock network) {
         try {
             PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
                     "SELECT generator_id FROM network_generators WHERE network_id = ?"
@@ -116,16 +133,20 @@ public class NetworkManager {
         }
     }
     
-    public GeneratorNetwork createNetwork(UUID owner, String name, NetworkTier tier) {
+    public NetworkBlock createNetwork(UUID owner, String name, NetworkTier tier, Location location) {
         try {
             PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
-                    "INSERT INTO networks (owner, name, tier, creation_time) VALUES (?, ?, ?, ?)"
+                    "INSERT INTO networks (owner, name, world, x, y, z, tier, creation_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             );
             
             stmt.setString(1, owner.toString());
             stmt.setString(2, name);
-            stmt.setString(3, tier.name());
-            stmt.setLong(4, System.currentTimeMillis());
+            stmt.setString(3, location.getWorld().getName());
+            stmt.setInt(4, location.getBlockX());
+            stmt.setInt(5, location.getBlockY());
+            stmt.setInt(6, location.getBlockZ());
+            stmt.setString(7, tier.name());
+            stmt.setLong(8, System.currentTimeMillis());
             
             int result = stmt.executeUpdate();
             
@@ -136,7 +157,7 @@ public class NetworkManager {
                     networkId = rs.getInt(1);
                 }
                 
-                GeneratorNetwork network = new GeneratorNetwork(networkId, owner, name, tier);
+                NetworkBlock network = new NetworkBlock(networkId, location, owner, name, tier);
                 networks.put(networkId, network);
                 
                 plugin.getLogger().fine("Created network " + networkId + " for player " + owner);
@@ -150,8 +171,19 @@ public class NetworkManager {
     }
     
     public boolean addGeneratorToNetwork(int networkId, int generatorId) {
-        GeneratorNetwork network = networks.get(networkId);
+        NetworkBlock network = networks.get(networkId);
         if (network == null) return false;
+        
+        Generator generator = findGeneratorById(generatorId);
+        if (generator == null) return false;
+        
+        if (!network.isInRange(generator.getLocation())) {
+            return false;
+        }
+        
+        if (network.isMaxCapacity()) {
+            return false;
+        }
         
         if (generatorNetworkMap.containsKey(generatorId)) {
             removeGeneratorFromNetwork(generatorId);
@@ -171,10 +203,7 @@ public class NetworkManager {
                 network.addGenerator(generatorId);
                 generatorNetworkMap.put(generatorId, networkId);
                 
-                Generator generator = findGeneratorById(generatorId);
-                if (generator != null) {
-                    DisplayManager.updateHologram(plugin, generator);
-                }
+                DisplayManager.updateHologram(plugin, generator);
                 
                 return true;
             }
@@ -189,7 +218,7 @@ public class NetworkManager {
         Integer networkId = generatorNetworkMap.get(generatorId);
         if (networkId == null) return false;
         
-        GeneratorNetwork network = networks.get(networkId);
+        NetworkBlock network = networks.get(networkId);
         if (network == null) return false;
         
         try {
@@ -221,7 +250,7 @@ public class NetworkManager {
     }
     
     public boolean deleteNetwork(int networkId) {
-        GeneratorNetwork network = networks.get(networkId);
+        NetworkBlock network = networks.get(networkId);
         if (network == null) return false;
         
         try {
@@ -234,7 +263,7 @@ public class NetworkManager {
             int result = stmt.executeUpdate();
             
             if (result > 0) {
-                for (int generatorId : network.getGeneratorIds()) {
+                for (int generatorId : network.getConnectedGenerators()) {
                     generatorNetworkMap.remove(generatorId);
                     
                     Generator generator = findGeneratorById(generatorId);
@@ -254,7 +283,7 @@ public class NetworkManager {
     }
     
     public boolean upgradeNetwork(int networkId, NetworkTier newTier) {
-        GeneratorNetwork network = networks.get(networkId);
+        NetworkBlock network = networks.get(networkId);
         if (network == null) return false;
         
         try {
@@ -270,7 +299,7 @@ public class NetworkManager {
             if (result > 0) {
                 network.upgradeTier(newTier);
                 
-                for (int generatorId : network.getGeneratorIds()) {
+                for (int generatorId : network.getConnectedGenerators()) {
                     Generator generator = findGeneratorById(generatorId);
                     if (generator != null) {
                         DisplayManager.updateHologram(plugin, generator);
@@ -286,23 +315,39 @@ public class NetworkManager {
         return false;
     }
     
-    public GeneratorNetwork getGeneratorNetwork(int generatorId) {
+    public NetworkBlock getGeneratorNetwork(int generatorId) {
         Integer networkId = generatorNetworkMap.get(generatorId);
         if (networkId == null) return null;
         
         return networks.get(networkId);
     }
     
-    public List<GeneratorNetwork> getPlayerNetworks(UUID playerUuid) {
-        List<GeneratorNetwork> playerNetworks = new ArrayList<>();
+    public NetworkBlock getNetworkAt(Location location) {
+        for (NetworkBlock network : networks.values()) {
+            if (network.isAtLocation(location)) {
+                return network;
+            }
+        }
+        return null;
+    }
+    
+    public List<NetworkBlock> getPlayerNetworks(UUID playerUuid) {
+        List<NetworkBlock> playerNetworks = new ArrayList<>();
         
-        for (GeneratorNetwork network : networks.values()) {
+        for (NetworkBlock network : networks.values()) {
             if (network.getOwner().equals(playerUuid)) {
                 playerNetworks.add(network);
             }
         }
         
         return playerNetworks;
+    }
+    
+    public double getGeneratorEfficiencyBonus(int generatorId) {
+        NetworkBlock network = getGeneratorNetwork(generatorId);
+        if (network == null) return 0.0;
+        
+        return network.getEfficiencyBonus();
     }
     
     public void toggleNetworkVisualization(Player player) {
@@ -330,7 +375,8 @@ public class NetworkManager {
     private void visualizeNetworks() {
         if (playersViewingNetworks.isEmpty()) return;
         
-        Map<UUID, List<Generator>> playerGenerators = new HashMap<>();
+        Map<UUID, List<Location>> playerNetworkLocations = new HashMap<>();
+        Map<UUID, Map<Integer, List<Generator>>> playerGeneratorsByNetwork = new HashMap<>();
         
         for (UUID playerUuid : playersViewingNetworks) {
             Player player = plugin.getServer().getPlayer(playerUuid);
@@ -339,80 +385,107 @@ public class NetworkManager {
                 continue;
             }
             
-            List<Generator> generators = new ArrayList<>();
-            for (Generator generator : plugin.getGeneratorManager().getActiveGenerators().values()) {
-                if (generator.getOwner().equals(playerUuid)) {
-                    generators.add(generator);
+            List<Location> networkLocations = new ArrayList<>();
+            Map<Integer, List<Generator>> generatorsByNetwork = new HashMap<>();
+            
+            for (NetworkBlock network : networks.values()) {
+                if (network.getOwner().equals(playerUuid)) {
+                    if (network.getLocation().getWorld().equals(player.getWorld())) {
+                        networkLocations.add(network.getLocation());
+                        
+                        List<Generator> networkGenerators = new ArrayList<>();
+                        for (int generatorId : network.getConnectedGenerators()) {
+                            Generator generator = findGeneratorById(generatorId);
+                            if (generator != null && generator.getLocation().getWorld().equals(player.getWorld())) {
+                                networkGenerators.add(generator);
+                            }
+                        }
+                        
+                        if (!networkGenerators.isEmpty()) {
+                            generatorsByNetwork.put(network.getNetworkId(), networkGenerators);
+                        }
+                    }
                 }
             }
             
-            playerGenerators.put(playerUuid, generators);
+            playerNetworkLocations.put(playerUuid, networkLocations);
+            playerGeneratorsByNetwork.put(playerUuid, generatorsByNetwork);
         }
         
         plugin.getServer().getScheduler().runTask(plugin, () -> {
-            for (Map.Entry<UUID, List<Generator>> entry : playerGenerators.entrySet()) {
-                UUID playerUuid = entry.getKey();
-                List<Generator> generators = entry.getValue();
+            for (UUID playerUuid : playersViewingNetworks) {
+                List<Location> networkLocations = playerNetworkLocations.get(playerUuid);
+                Map<Integer, List<Generator>> generatorsByNetwork = playerGeneratorsByNetwork.get(playerUuid);
                 
-                Map<Integer, List<Generator>> networkGenerators = new HashMap<>();
+                if (networkLocations == null || generatorsByNetwork == null) continue;
                 
-                for (Generator generator : generators) {
-                    Integer networkId = generatorNetworkMap.get(generator.getId());
-                    if (networkId != null) {
-                        networkGenerators.computeIfAbsent(networkId, k -> new ArrayList<>()).add(generator);
+                Player player = plugin.getServer().getPlayer(playerUuid);
+                if (player == null || !player.isOnline()) continue;
+                
+                for (Map.Entry<Integer, List<Generator>> entry : generatorsByNetwork.entrySet()) {
+                    int networkId = entry.getKey();
+                    List<Generator> generators = entry.getValue();
+                    NetworkBlock network = networks.get(networkId);
+                    
+                    if (network == null || generators.isEmpty()) continue;
+                    
+                    Location networkLocation = network.getLocation().clone().add(0.5, 0.5, 0.5);
+                    Particle.DustOptions dustOptions = getNetworkParticleColor(network.getTier());
+                    
+                    // Draw range indicator
+                    if (player.getLocation().distance(networkLocation) < 50) {
+                        drawRangeCircle(player, networkLocation, network.getRange(), dustOptions);
                     }
-                }
-                
-                for (Map.Entry<Integer, List<Generator>> networkEntry : networkGenerators.entrySet()) {
-                    int networkId = networkEntry.getKey();
-                    List<Generator> networkGens = networkEntry.getValue();
                     
-                    GeneratorNetwork network = networks.get(networkId);
-                    if (network == null) continue;
-                    
-                    drawNetworkConnections(network, networkGens);
+                    // Draw connections
+                    for (Generator generator : generators) {
+                        if (player.getLocation().distance(generator.getLocation()) < 50) {
+                            drawParticleLine(networkLocation, generator.getLocation().clone().add(0.5, 0.5, 0.5), dustOptions);
+                        }
+                    }
                 }
             }
         });
     }
     
-    private void drawNetworkConnections(GeneratorNetwork network, List<Generator> generators) {
-        if (generators.size() < 2) return;
+    private void drawRangeCircle(Player player, Location center, double radius, Particle.DustOptions dustOptions) {
+        int points = 36;
+        double angleIncrement = (2 * Math.PI) / points;
         
-        Particle.DustOptions dustOptions = getNetworkParticleColor(network.getTier());
-        
-        for (int i = 0; i < generators.size(); i++) {
-            for (int j = i + 1; j < generators.size(); j++) {
-                Generator gen1 = generators.get(i);
-                Generator gen2 = generators.get(j);
-                
-                drawParticleLine(gen1.getLocation(), gen2.getLocation(), dustOptions);
-            }
+        for (int i = 0; i < points; i++) {
+            double angle = i * angleIncrement;
+            double x = center.getX() + radius * Math.cos(angle);
+            double z = center.getZ() + radius * Math.sin(angle);
+            
+            Location particleLocation = new Location(center.getWorld(), x, center.getY(), z);
+            player.spawnParticle(Particle.REDSTONE, particleLocation, 1, 0, 0, 0, 0, dustOptions);
         }
     }
     
-    private void drawParticleLine(Location loc1, Location loc2, Particle.DustOptions dustOptions) {
-        if (!loc1.getWorld().equals(loc2.getWorld())) return;
+    private void drawParticleLine(Location from, Location to, Particle.DustOptions dustOptions) {
+        if (!from.getWorld().equals(to.getWorld())) return;
         
-        double distance = loc1.distance(loc2);
-        if (distance > 50) return;
+        double distance = from.distance(to);
+        if (distance > 100) return;
         
         double particlesPerBlock = 2;
         int particleCount = (int) (distance * particlesPerBlock);
         
-        Location particleLoc1 = loc1.clone().add(0.5, 0.5, 0.5);
-        Location particleLoc2 = loc2.clone().add(0.5, 0.5, 0.5);
-        
-        double xDiff = (particleLoc2.getX() - particleLoc1.getX()) / particleCount;
-        double yDiff = (particleLoc2.getY() - particleLoc1.getY()) / particleCount;
-        double zDiff = (particleLoc2.getZ() - particleLoc1.getZ()) / particleCount;
+        double xDiff = (to.getX() - from.getX()) / particleCount;
+        double yDiff = (to.getY() - from.getY()) / particleCount;
+        double zDiff = (to.getZ() - from.getZ()) / particleCount;
         
         for (int i = 0; i < particleCount; i++) {
-            double x = particleLoc1.getX() + xDiff * i;
-            double y = particleLoc1.getY() + yDiff * i;
-            double z = particleLoc1.getZ() + zDiff * i;
+            double x = from.getX() + xDiff * i;
+            double y = from.getY() + yDiff * i;
+            double z = from.getZ() + zDiff * i;
             
-            loc1.getWorld().spawnParticle(Particle.REDSTONE, x, y, z, 1, 0, 0, 0, 0, dustOptions);
+            Location particleLocation = new Location(from.getWorld(), x, y, z);
+            from.getWorld().spawnParticle(
+                    Particle.REDSTONE, 
+                    particleLocation, 
+                    1, 0, 0, 0, 0, 
+                    dustOptions);
         }
     }
     
@@ -442,13 +515,6 @@ public class NetworkManager {
         return null;
     }
     
-    public double getGeneratorEfficiencyBonus(int generatorId) {
-        GeneratorNetwork network = getGeneratorNetwork(generatorId);
-        if (network == null) return 0;
-        
-        return network.getEfficiencyBonus();
-    }
-    
     public void shutdown() {
         if (networkVisualizerTask != null) {
             networkVisualizerTask.cancel();
@@ -460,7 +526,13 @@ public class NetworkManager {
         playersViewingNetworks.clear();
     }
     
-    public Map<Integer, GeneratorNetwork> getNetworks() {
+    public Map<Integer, NetworkBlock> getNetworks() {
         return networks;
+    }
+    
+    public void restoreNetworkBlocks() {
+        for (NetworkBlock network : networks.values()) {
+            network.updateBlockAppearance();
+        }
     }
 }

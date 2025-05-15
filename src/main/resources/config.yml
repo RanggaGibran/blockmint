@@ -131,6 +131,7 @@ networks:
     enabled: true
     particle-density: 2
     max-distance: 50
+    show-range-indicators: true
   
   tiers:
     BASIC:
@@ -138,27 +139,37 @@ networks:
       base-bonus: 0.05
       per-generator-bonus: 0.01
       max-bonus: 0.25
+      range: 15
+      max-generators: 5
       
     ADVANCED:
       cost: 5000
       base-bonus: 0.1
       per-generator-bonus: 0.015
       max-bonus: 0.4
+      range: 20
+      max-generators: 10
       
     ELITE:
       cost: 25000
       base-bonus: 0.15
       per-generator-bonus: 0.02
       max-bonus: 0.6
+      range: 25
+      max-generators: 15
       
     ULTIMATE:
       cost: 100000
       base-bonus: 0.2
       per-generator-bonus: 0.025
       max-bonus: 0.8
+      range: 30
+      max-generators: 20
       
     CELESTIAL:
       cost: 500000
       base-bonus: 0.3
       per-generator-bonus: 0.03
       max-bonus: 1.0
+      range: 40
+      max-generators: 30

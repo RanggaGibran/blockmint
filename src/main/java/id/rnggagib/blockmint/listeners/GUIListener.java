@@ -10,6 +10,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.InventoryHolder;
 
 public class GUIListener implements Listener {
@@ -27,11 +28,20 @@ public class GUIListener implements Listener {
         }
         
         Player player = (Player) event.getWhoClicked();
-        BaseGUI gui = plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
+        String title = event.getView().getTitle();
         
+        // Check if it's a BaseGUI
+        BaseGUI gui = plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
         if (gui != null && event.getInventory().equals(gui.getInventory())) {
             event.setCancelled(true);
             gui.handleClick(event);
+            return;
+        }
+        
+        // Check if it's a NetworkGUI
+        if (plugin.getNetworkGUIManager().isNetworkInventory(title)) {
+            event.setCancelled(true);
+            plugin.getNetworkGUIManager().handleInventoryClick(player, event.getRawSlot(), event.getInventory());
         }
     }
     
@@ -72,5 +82,12 @@ public class GUIListener implements Listener {
         
         Player player = (Player) event.getPlayer();
         plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
+    }
+    
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+        plugin.getGUIManager().removeActiveGUI(player.getUniqueId().toString());
+        plugin.getNetworkGUIManager().playerLogout(player.getUniqueId());
     }
 }

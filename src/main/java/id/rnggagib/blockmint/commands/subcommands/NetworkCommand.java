@@ -3,17 +3,20 @@ package id.rnggagib.blockmint.commands.subcommands;
 import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.commands.SubCommand;
 import id.rnggagib.blockmint.generators.Generator;
-import id.rnggagib.blockmint.network.GeneratorNetwork;
+import id.rnggagib.blockmint.network.NetworkBlock;
 import id.rnggagib.blockmint.network.NetworkTier;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.Location;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -37,7 +40,7 @@ public class NetworkCommand implements SubCommand {
     
     @Override
     public String getSyntax() {
-        return "/blockmint network <create|list|info|add|remove|upgrade|visualize>";
+        return "/blockmint network <create|list|info|add|remove|upgrade|give|visualize>";
     }
     
     @Override
@@ -85,6 +88,9 @@ public class NetworkCommand implements SubCommand {
             case "upgrade":
                 handleUpgradeNetwork(player, args);
                 break;
+            case "give":
+                handleGiveNetworkBlock(player, args);
+                break;
             case "visualize":
                 handleVisualizeNetwork(player);
                 break;
@@ -102,6 +108,7 @@ public class NetworkCommand implements SubCommand {
         player.sendMessage(ChatColor.YELLOW + "/blockmint network add <network-id> <generator-id> " + ChatColor.GRAY + "- Add generator to network");
         player.sendMessage(ChatColor.YELLOW + "/blockmint network remove <generator-id> " + ChatColor.GRAY + "- Remove generator from its network");
         player.sendMessage(ChatColor.YELLOW + "/blockmint network upgrade <id> <tier> " + ChatColor.GRAY + "- Upgrade a network");
+        player.sendMessage(ChatColor.YELLOW + "/blockmint network give <player> <tier> " + ChatColor.GRAY + "- Give a network block");
         player.sendMessage(ChatColor.YELLOW + "/blockmint network visualize " + ChatColor.GRAY + "- Toggle network visualization");
     }
     
@@ -124,28 +131,15 @@ public class NetworkCommand implements SubCommand {
             return;
         }
         
-        double cost = calculateNetworkCost(tier);
+        ItemStack networkBlock = NetworkBlock.createNetworkBlockItem(tier, name);
+        player.getInventory().addItem(networkBlock);
         
-        if (!plugin.getEconomy().has(player, cost)) {
-            player.sendMessage(ChatColor.RED + "You need $" + cost + " to create a " + tier.getDisplayName() + " network.");
-            return;
-        }
-        
-        GeneratorNetwork network = plugin.getNetworkManager().createNetwork(player.getUniqueId(), name, tier);
-        
-        if (network != null) {
-            plugin.getEconomy().withdrawPlayer(player, cost);
-            player.sendMessage(ChatColor.GREEN + "Created a new " + tier.getDisplayName() + " network: " + name + " (ID: " + network.getNetworkId() + ")");
-            player.sendMessage(ChatColor.GREEN + "Base Efficiency Bonus: " + (tier.getBaseBonus() * 100) + "%");
-            player.sendMessage(ChatColor.GREEN + "Per Generator Bonus: " + (tier.getPerGeneratorBonus() * 100) + "%");
-            player.sendMessage(ChatColor.GREEN + "Maximum Bonus: " + (tier.getMaxBonus() * 100) + "%");
-        } else {
-            player.sendMessage(ChatColor.RED + "Failed to create network.");
-        }
+        player.sendMessage(ChatColor.GREEN + "You've received a " + tier.getDisplayName() + " Network Block named '" + name + "'");
+        player.sendMessage(ChatColor.YELLOW + "Place it to create a network controller!");
     }
     
     private void handleListNetworks(Player player) {
-        List<GeneratorNetwork> networks = plugin.getNetworkManager().getPlayerNetworks(player.getUniqueId());
+        List<NetworkBlock> networks = plugin.getNetworkManager().getPlayerNetworks(player.getUniqueId());
         
         if (networks.isEmpty()) {
             player.sendMessage(ChatColor.YELLOW + "You don't have any generator networks.");
@@ -154,14 +148,14 @@ public class NetworkCommand implements SubCommand {
         
         player.sendMessage(ChatColor.GOLD + "=== Your Generator Networks ===");
         
-        for (GeneratorNetwork network : networks) {
+        for (NetworkBlock network : networks) {
             String networkInfo = ChatColor.YELLOW + "ID: " + network.getNetworkId() + 
                                 ChatColor.GRAY + " | " + 
                                 ChatColor.YELLOW + "Name: " + network.getName() + 
                                 ChatColor.GRAY + " | " + 
                                 ChatColor.YELLOW + "Tier: " + network.getTier().getDisplayName() + 
                                 ChatColor.GRAY + " | " + 
-                                ChatColor.YELLOW + "Generators: " + network.getSize() + 
+                                ChatColor.YELLOW + "Generators: " + network.getConnectedGeneratorCount() + 
                                 ChatColor.GRAY + " | " + 
                                 ChatColor.YELLOW + "Bonus: " + String.format("%.1f", network.getEfficiencyBonus() * 100) + "%";
             
@@ -183,7 +177,7 @@ public class NetworkCommand implements SubCommand {
             return;
         }
         
-        GeneratorNetwork network = plugin.getNetworkManager().getNetworks().get(networkId);
+        NetworkBlock network = plugin.getNetworkManager().getNetworks().get(networkId);
         
         if (network == null) {
             player.sendMessage(ChatColor.RED + "Network not found with ID: " + networkId);
@@ -200,12 +194,12 @@ public class NetworkCommand implements SubCommand {
         player.sendMessage(ChatColor.YELLOW + "Name: " + ChatColor.WHITE + network.getName());
         player.sendMessage(ChatColor.YELLOW + "Owner: " + ChatColor.WHITE + Bukkit.getOfflinePlayer(network.getOwner()).getName());
         player.sendMessage(ChatColor.YELLOW + "Tier: " + ChatColor.WHITE + network.getTier().getDisplayName());
-        player.sendMessage(ChatColor.YELLOW + "Generators: " + ChatColor.WHITE + network.getSize());
+        player.sendMessage(ChatColor.YELLOW + "Generators: " + ChatColor.WHITE + network.getConnectedGeneratorCount());
         player.sendMessage(ChatColor.YELLOW + "Efficiency Bonus: " + ChatColor.WHITE + String.format("%.1f", network.getEfficiencyBonus() * 100) + "%");
         
         player.sendMessage(ChatColor.GOLD + "Connected Generators:");
         
-        for (int generatorId : network.getGeneratorIds()) {
+        for (int generatorId : network.getConnectedGenerators()) {
             Generator generator = null;
             for (Generator g : plugin.getGeneratorManager().getActiveGenerators().values()) {
                 if (g.getId() == generatorId) {
@@ -246,7 +240,7 @@ public class NetworkCommand implements SubCommand {
             return;
         }
         
-        GeneratorNetwork network = plugin.getNetworkManager().getNetworks().get(networkId);
+        NetworkBlock network = plugin.getNetworkManager().getNetworks().get(networkId);
         
         if (network == null) {
             player.sendMessage(ChatColor.RED + "Network not found with ID: " + networkId);
@@ -318,7 +312,7 @@ public class NetworkCommand implements SubCommand {
             return;
         }
         
-        GeneratorNetwork network = plugin.getNetworkManager().getGeneratorNetwork(generatorId);
+        NetworkBlock network = plugin.getNetworkManager().getGeneratorNetwork(generatorId);
         
         if (network == null) {
             player.sendMessage(ChatColor.RED + "This generator is not part of any network.");
@@ -361,7 +355,7 @@ public class NetworkCommand implements SubCommand {
             return;
         }
         
-        GeneratorNetwork network = plugin.getNetworkManager().getNetworks().get(networkId);
+        NetworkBlock network = plugin.getNetworkManager().getNetworks().get(networkId);
         
         if (network == null) {
             player.sendMessage(ChatColor.RED + "Network not found with ID: " + networkId);
@@ -396,6 +390,42 @@ public class NetworkCommand implements SubCommand {
         }
     }
     
+    private void handleGiveNetworkBlock(Player player, String[] args) {
+        if (!player.hasPermission("blockmint.admin.network.give")) {
+            plugin.getMessageManager().send(player, "commands.no-permission");
+            return;
+        }
+        
+        if (args.length < 4) {
+            player.sendMessage(ChatColor.RED + "Usage: /blockmint network give <player> <tier>");
+            return;
+        }
+        
+        String targetName = args[2];
+        Player target = plugin.getServer().getPlayer(targetName);
+        if (target == null) {
+            player.sendMessage(ChatColor.RED + "Player not found: " + targetName);
+            return;
+        }
+        
+        String tierName = args[3].toUpperCase();
+        NetworkTier tier;
+        try {
+            tier = NetworkTier.valueOf(tierName);
+        } catch (IllegalArgumentException e) {
+            player.sendMessage(ChatColor.RED + "Invalid tier: " + tierName);
+            player.sendMessage(ChatColor.RED + "Available tiers: BASIC, ADVANCED, ELITE, ULTIMATE, CELESTIAL");
+            return;
+        }
+        
+        String name = "Network " + target.getName();
+        ItemStack networkBlock = NetworkBlock.createNetworkBlockItem(tier, name);
+        target.getInventory().addItem(networkBlock);
+        
+        player.sendMessage(ChatColor.GREEN + "Gave a " + tier.getDisplayName() + " Network Block to " + target.getName());
+        target.sendMessage(ChatColor.GREEN + "You received a " + tier.getDisplayName() + " Network Block");
+    }
+    
     private void handleVisualizeNetwork(Player player) {
         plugin.getNetworkManager().toggleNetworkVisualization(player);
     }
@@ -425,7 +455,7 @@ public class NetworkCommand implements SubCommand {
     @Override
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
         if (args.length == 2) {
-            return Arrays.asList("create", "list", "info", "add", "remove", "upgrade", "visualize").stream()
+            return Arrays.asList("create", "list", "info", "add", "remove", "upgrade", "give", "visualize").stream()
                     .filter(s -> s.toLowerCase().startsWith(args[1].toLowerCase()))
                     .collect(Collectors.toList());
         }
@@ -443,10 +473,15 @@ public class NetworkCommand implements SubCommand {
                             .map(n -> String.valueOf(n.getNetworkId()))
                             .filter(s -> s.startsWith(args[2]))
                             .collect(Collectors.toList());
+                case "give":
+                    return Bukkit.getOnlinePlayers().stream()
+                            .map(Player::getName)
+                            .filter(name -> name.toLowerCase().startsWith(args[2].toLowerCase()))
+                            .collect(Collectors.toList());
                 case "remove":
                     return plugin.getGeneratorManager().getActiveGenerators().values().stream()
                             .filter(g -> g.getOwner().equals(((Player) sender).getUniqueId()))
-                            .filter(g -> g.getNetworkId() != -1)
+                            .filter(g -> plugin.getNetworkManager().getGeneratorNetwork(g.getId()) != null)
                             .map(g -> String.valueOf(g.getId()))
                             .filter(s -> s.startsWith(args[2]))
                             .collect(Collectors.toList());
@@ -454,7 +489,7 @@ public class NetworkCommand implements SubCommand {
         }
         
         if (args.length == 4) {
-            if (args[1].equalsIgnoreCase("create") || args[1].equalsIgnoreCase("upgrade")) {
+            if (args[1].equalsIgnoreCase("create") || args[1].equalsIgnoreCase("upgrade") || args[1].equalsIgnoreCase("give")) {
                 return Arrays.stream(NetworkTier.values())
                         .map(NetworkTier::name)
                         .filter(s -> s.toLowerCase().startsWith(args[3].toLowerCase()))

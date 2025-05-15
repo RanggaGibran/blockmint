@@ -4,6 +4,7 @@ import org.bukkit.Location;
 
 import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.network.GeneratorNetwork;
+import id.rnggagib.blockmint.network.NetworkBlock;
 
 import java.util.UUID;
 
@@ -77,9 +78,9 @@ public class Generator {
     
     public int getNetworkId() {
         if (BlockMint.getInstance().getNetworkManager() != null) {
-            GeneratorNetwork network = BlockMint.getInstance().getNetworkManager().getGeneratorNetwork(id);
-            if (network != null) {
-                return network.getNetworkId();
+            NetworkBlock networkBlock = BlockMint.getInstance().getNetworkManager().getGeneratorNetwork(id);
+            if (networkBlock != null) {
+                return networkBlock.getNetworkId();
             }
         }
         return -1;

@@ -11,11 +11,13 @@ import id.rnggagib.blockmint.listeners.ChunkListeners;
 import id.rnggagib.blockmint.listeners.GUIListener;
 import id.rnggagib.blockmint.listeners.PlayerListeners;
 import id.rnggagib.blockmint.listeners.ExplosionListener;
+import id.rnggagib.blockmint.listeners.NetworkBlockListener;
 import id.rnggagib.blockmint.placeholders.BlockMintExpansion;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import id.rnggagib.blockmint.utils.MessageManager;
 import id.rnggagib.blockmint.utils.PluginUtils;
 import id.rnggagib.blockmint.network.NetworkManager;
+import id.rnggagib.blockmint.gui.NetworkGUIManager;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -35,6 +37,7 @@ public class BlockMint extends JavaPlugin {
     private int taskId = -1;
     private PluginUtils utils;
     private NetworkManager networkManager;
+    private NetworkGUIManager networkGUIManager;
     private boolean isFullyEnabled = false;
     
     @Override
@@ -135,6 +138,8 @@ public class BlockMint extends JavaPlugin {
         
         guiManager = new GUIManager(this);
         
+        networkGUIManager = new NetworkGUIManager(this);
+        
         utils = new PluginUtils(this);
     }
     
@@ -149,6 +154,7 @@ public class BlockMint extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new GUIListener(this), this);
         getServer().getPluginManager().registerEvents(new ChunkListeners(this), this);
         getServer().getPluginManager().registerEvents(new ExplosionListener(this), this);
+        getServer().getPluginManager().registerEvents(new NetworkBlockListener(this), this);
     }
     
     private void startTasks() {
@@ -239,5 +245,9 @@ public class BlockMint extends JavaPlugin {
     
     public NetworkManager getNetworkManager() {
         return networkManager;
+    }
+    
+    public NetworkGUIManager getNetworkGUIManager() {
+        return networkGUIManager;
     }
 }

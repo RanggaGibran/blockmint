@@ -4,6 +4,7 @@ import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.generators.GeneratorType;
 import id.rnggagib.blockmint.network.GeneratorNetwork;
+import id.rnggagib.blockmint.network.NetworkBlock;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -123,10 +124,10 @@ public class DisplayManager {
         String name = generator.getType().getName() + " Generator";
         String level = "Level " + generator.getLevel() + "/" + generator.getType().getMaxLevel();
         
-        GeneratorNetwork network = plugin.getNetworkManager().getGeneratorNetwork(generator.getId());
+        NetworkBlock network = plugin.getNetworkManager().getGeneratorNetwork(generator.getId());
         String networkInfo = "";
         if (network != null) {
-            networkInfo = " §7[§b⚙ " + network.getTier().name().charAt(0) + "§7]";
+            networkInfo = " §7[§b⚡ " + network.getTier().name().charAt(0) + "§7]";
         }
         
         nameStand.setCustomName("§6§l" + name + networkInfo);
