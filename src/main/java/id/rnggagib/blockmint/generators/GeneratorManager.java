@@ -3,6 +3,7 @@ package id.rnggagib.blockmint.generators;
 import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
@@ -113,6 +114,12 @@ public class GeneratorManager {
                 }
                 
                 GeneratorType generatorType = generatorTypes.get(type);
+                
+                if (plugin.getServer().getWorld(world) == null) {
+                    plugin.getLogger().warning("World " + world + " not found for generator " + id);
+                    continue;
+                }
+                
                 Location location = new Location(plugin.getServer().getWorld(world), x, y, z);
                 
                 Generator generator = new Generator(id, owner, location, generatorType, level);
@@ -120,8 +127,15 @@ public class GeneratorManager {
                 
                 activeGenerators.put(location, generator);
                 
+                // Only place blocks and create holograms if the chunk is loaded
                 if (location.getWorld() != null && location.getChunk().isLoaded()) {
-                    DisplayManager.createHologram(plugin, location, generatorType, level);
+                    if (location.getBlock().getType() != Material.valueOf(generatorType.getMaterial())) {
+                        location.getBlock().setType(Material.valueOf(generatorType.getMaterial()));
+                    }
+                    
+                    if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true)) {
+                        DisplayManager.createHologram(plugin, location, generatorType, level);
+                    }
                 }
                 
                 count++;
@@ -139,12 +153,14 @@ public class GeneratorManager {
             return false;
         }
         
+        if (activeGenerators.containsKey(location)) {
+            return false;
+        }
+        
         try {
             PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
-                    "INSERT INTO generators (owner, world, x, y, z, type, level, last_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    true
+                    "INSERT INTO generators (owner, world, x, y, z, type, level, last_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             );
-            
             stmt.setString(1, owner.toString());
             stmt.setString(2, location.getWorld().getName());
             stmt.setDouble(3, location.getX());
@@ -154,12 +170,11 @@ public class GeneratorManager {
             stmt.setInt(7, 1);
             stmt.setLong(8, System.currentTimeMillis());
             
-            int affectedRows = stmt.executeUpdate();
+            int result = stmt.executeUpdate();
             
-            if (affectedRows > 0) {
-                ResultSet rs = stmt.getGeneratedKeys();
+            if (result > 0) {
                 int id = -1;
-                
+                ResultSet rs = stmt.getGeneratedKeys();
                 if (rs.next()) {
                     id = rs.getInt(1);
                 }
@@ -180,6 +195,7 @@ public class GeneratorManager {
     
     public boolean removeGenerator(Location location) {
         Generator generator = activeGenerators.get(location);
+        
         if (generator == null) {
             return false;
         }
@@ -188,17 +204,14 @@ public class GeneratorManager {
             PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
                     "DELETE FROM generators WHERE id = ?"
             );
-            
             stmt.setInt(1, generator.getId());
             
-            int affectedRows = stmt.executeUpdate();
+            int result = stmt.executeUpdate();
             
-            if (affectedRows > 0) {
+            if (result > 0) {
                 activeGenerators.remove(location);
-                updatePlayerStats(generator.getOwner());
                 return true;
             }
-            
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Error removing generator from database!", e);
         }
@@ -208,24 +221,32 @@ public class GeneratorManager {
     
     private void updatePlayerStats(UUID playerUUID) {
         try {
-            PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
-                    "INSERT INTO player_stats (uuid, player_name, generators_owned, total_earnings) " +
-                    "VALUES (?, ?, 1, 0.0) " +
-                    "ON CONFLICT(uuid) DO UPDATE SET generators_owned = generators_owned + 1"
+            PreparedStatement selectStmt = plugin.getDatabaseManager().prepareStatement(
+                    "SELECT COUNT(*) FROM player_stats WHERE uuid = ?"
             );
+            selectStmt.setString(1, playerUUID.toString());
+            ResultSet rs = selectStmt.executeQuery();
             
-            stmt.setString(1, playerUUID.toString());
-            stmt.setString(2, plugin.getServer().getOfflinePlayer(playerUUID).getName());
-            stmt.executeUpdate();
-            
+            if (rs.next() && rs.getInt(1) > 0) {
+                PreparedStatement updateStmt = plugin.getDatabaseManager().prepareStatement(
+                        "UPDATE player_stats SET generators_placed = generators_placed + 1 WHERE uuid = ?"
+                );
+                updateStmt.setString(1, playerUUID.toString());
+                updateStmt.executeUpdate();
+            } else {
+                PreparedStatement insertStmt = plugin.getDatabaseManager().prepareStatement(
+                        "INSERT INTO player_stats (uuid, generators_placed, total_earnings) VALUES (?, 1, 0)"
+                );
+                insertStmt.setString(1, playerUUID.toString());
+                insertStmt.executeUpdate();
+            }
         } catch (SQLException e) {
-            plugin.getLogger().severe("Could not update player stats: " + e.getMessage());
+            plugin.getLogger().log(Level.SEVERE, "Error updating player stats!", e);
         }
     }
     
     public void reloadGenerators() {
-        loadGeneratorTypes();
-        loadGeneratorsFromDatabase();
+        loadGenerators();
     }
     
     public Generator getGenerator(Location location) {
@@ -248,7 +269,14 @@ public class GeneratorManager {
             Generator generator = entry.getValue();
             
             if (location.getWorld() != null && location.getChunk().isLoaded()) {
-                DisplayManager.createHologram(plugin, location, generator.getType(), generator.getLevel());
+                // Also ensure the physical block is present
+                if (location.getBlock().getType() != Material.valueOf(generator.getType().getMaterial())) {
+                    location.getBlock().setType(Material.valueOf(generator.getType().getMaterial()));
+                }
+                
+                if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true)) {
+                    DisplayManager.createHologram(plugin, location, generator.getType(), generator.getLevel());
+                }
             }
         }
     }

@@ -4,21 +4,19 @@ import id.rnggagib.blockmint.commands.CommandManager;
 import id.rnggagib.blockmint.config.ConfigManager;
 import id.rnggagib.blockmint.database.DatabaseManager;
 import id.rnggagib.blockmint.generators.GeneratorManager;
+import id.rnggagib.blockmint.tasks.GeneratorTask;
 import id.rnggagib.blockmint.gui.GUIManager;
 import id.rnggagib.blockmint.listeners.BlockListeners;
 import id.rnggagib.blockmint.listeners.ChunkListeners;
 import id.rnggagib.blockmint.listeners.GUIListener;
 import id.rnggagib.blockmint.listeners.PlayerListeners;
 import id.rnggagib.blockmint.placeholders.BlockMintExpansion;
-import id.rnggagib.blockmint.tasks.GeneratorTask;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import id.rnggagib.blockmint.utils.MessageManager;
 import id.rnggagib.blockmint.utils.PluginUtils;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
-
-import java.util.logging.Level;
 
 public class BlockMint extends JavaPlugin {
     
@@ -49,6 +47,13 @@ public class BlockMint extends JavaPlugin {
         registerListeners();
         startTasks();
         
+        // Ensure generators are recreated properly after all worlds are loaded
+        getServer().getScheduler().runTaskLater(this, () -> {
+            getLogger().info("Performing delayed generator recreation...");
+            generatorManager.recreateHolograms();
+            getLogger().info("Generator recreation complete. Active holograms: " + DisplayManager.getActiveHologramsCount());
+        }, 100L);
+        
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new BlockMintExpansion(this).register();
             getLogger().info("Registered PlaceholderAPI expansion!");
@@ -60,10 +65,17 @@ public class BlockMint extends JavaPlugin {
     @Override
     public void onDisable() {
         stopTasks();
+        
+        // Safely remove all holograms before server shutdown
+        getLogger().info("Removing all generator holograms...");
         DisplayManager.removeAllHolograms();
         
         if (databaseManager != null) {
             databaseManager.close();
+        }
+        
+        if (messageManager != null) {
+            messageManager.close();
         }
         
         getLogger().info("BlockMint has been disabled!");
@@ -131,6 +143,11 @@ public class BlockMint extends JavaPlugin {
         messageManager.reload();
         generatorManager.reloadGenerators();
         startTasks();
+        
+        // Re-create holograms after reload
+        getServer().getScheduler().runTaskLater(this, () -> {
+            generatorManager.recreateHolograms();
+        }, 20L);
     }
     
     public static BlockMint getInstance() {

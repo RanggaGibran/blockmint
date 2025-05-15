@@ -87,9 +87,17 @@ public class BlockListeners implements Listener {
         }
     }
     
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBlockBreak(BlockBreakEvent event) {
-        Block block = event.getBlock();
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND) {
+            return;
+        }
+        
+        if (event.getClickedBlock() == null) {
+            return;
+        }
+        
+        Block block = event.getClickedBlock();
         Player player = event.getPlayer();
         Location location = block.getLocation();
         
@@ -100,6 +108,28 @@ public class BlockListeners implements Listener {
         
         event.setCancelled(true);
         
+        if (event.getAction().name().contains("LEFT_CLICK") && player.isSneaking()) {
+            attemptPickupGenerator(player, generator, location, block);
+            return;
+        }
+        
+        switch (event.getAction()) {
+            case RIGHT_CLICK_BLOCK:
+                if (player.isSneaking() && player.hasPermission("blockmint.upgrade")) {
+                    upgradeGenerator(player, generator);
+                } else {
+                    collectGenerator(player, generator);
+                }
+                break;
+            case LEFT_CLICK_BLOCK:
+                showGeneratorInfo(player, generator);
+                break;
+            default:
+                break;
+        }
+    }
+    
+    private void attemptPickupGenerator(Player player, Generator generator, Location location, Block block) {
         if (!generator.getOwner().equals(player.getUniqueId()) && 
             !player.hasPermission("blockmint.admin.remove")) {
             plugin.getMessageManager().send(player, "general.no-permission");
@@ -112,8 +142,7 @@ public class BlockListeners implements Listener {
         if (lastPickupAttempt.containsKey(playerUUID) && 
             now - lastPickupAttempt.get(playerUUID) < CONFIRMATION_DELAY_MS) {
             
-            boolean success = plugin.getGeneratorManager().removeGenerator(location);
-            if (success) {
+            if (plugin.getGeneratorManager().removeGenerator(location)) {
                 ItemStack generatorItem = plugin.getUtils().getGeneratorItemManager().createGeneratorItem(generator.getType());
                 HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(generatorItem);
                 
@@ -141,17 +170,8 @@ public class BlockListeners implements Listener {
     }
     
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onPlayerInteract(PlayerInteractEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND) {
-            return;
-        }
-        
-        if (event.getClickedBlock() == null) {
-            return;
-        }
-        
-        Block block = event.getClickedBlock();
-        Player player = event.getPlayer();
+    public void onBlockBreak(BlockBreakEvent event) {
+        Block block = event.getBlock();
         Location location = block.getLocation();
         
         Generator generator = plugin.getGeneratorManager().getGenerator(location);
@@ -160,21 +180,6 @@ public class BlockListeners implements Listener {
         }
         
         event.setCancelled(true);
-        
-        switch (event.getAction()) {
-            case RIGHT_CLICK_BLOCK:
-                if (player.isSneaking() && player.hasPermission("blockmint.upgrade")) {
-                    upgradeGenerator(player, generator);
-                } else {
-                    collectGenerator(player, generator);
-                }
-                break;
-            case LEFT_CLICK_BLOCK:
-                showGeneratorInfo(player, generator);
-                break;
-            default:
-                break;
-        }
     }
     
     private int countPlayerGenerators(UUID playerUUID) {
