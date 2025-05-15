@@ -38,33 +38,46 @@ public class GUIManager {
         activeGuis.remove(uuid);
     }
     
+    public void registerActiveGUI(String uuid, BaseGUI gui) {
+        activeGuis.put(uuid, gui);
+    }
+    
     public static ItemStack createItem(Material material, String name, List<String> lore) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(ChatColor.translateAlternateColorCodes('&', name));
-        
-        if (lore != null) {
-            List<String> coloredLore = new ArrayList<>();
-            for (String line : lore) {
-                coloredLore.add(ChatColor.translateAlternateColorCodes('&', line));
+        if (meta != null) {
+            if (name != null && !name.isEmpty()) {
+                meta.setDisplayName(ChatColor.translateAlternateColorCodes('&', name));
             }
-            meta.setLore(coloredLore);
+            
+            if (lore != null) {
+                List<String> coloredLore = new ArrayList<>();
+                for (String line : lore) {
+                    coloredLore.add(ChatColor.translateAlternateColorCodes('&', line));
+                }
+                meta.setLore(coloredLore);
+            }
+            
+            meta.addItemFlags(
+                ItemFlag.HIDE_ATTRIBUTES, 
+                ItemFlag.HIDE_ENCHANTS, 
+                ItemFlag.HIDE_POTION_EFFECTS, 
+                ItemFlag.HIDE_DYE,
+                ItemFlag.HIDE_UNBREAKABLE
+            );
+            item.setItemMeta(meta);
         }
-        
-        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ENCHANTS, ItemFlag.HIDE_POTION_EFFECTS);
-        item.setItemMeta(meta);
         return item;
     }
     
     public static ItemStack createGeneratorIcon(Generator generator, boolean isReadyToCollect) {
-        GeneratorType type = generator.getType();
-        Material material = Material.valueOf(type.getMaterial());
+        Material material = Material.valueOf(generator.getType().getMaterial());
         
         String nameColor = isReadyToCollect ? "&a" : "&6";
-        String name = nameColor + type.getName() + " Generator";
+        String name = nameColor + generator.getType().getName() + " Generator";
         
         List<String> lore = new ArrayList<>();
-        lore.add("&7Level: &e" + generator.getLevel() + "&7/&e" + type.getMaxLevel());
+        lore.add("&7Level: &e" + generator.getLevel() + "&7/&e" + generator.getType().getMaxLevel());
         lore.add("&7Value: &e$" + String.format("%.2f", generator.getValue()));
         
         if (isReadyToCollect) {
@@ -72,7 +85,7 @@ public class GUIManager {
             lore.add("&a✓ Ready to collect!");
         } else {
             long elapsed = System.currentTimeMillis() - generator.getLastGeneration();
-            long total = type.getGenerationTime() * 1000;
+            long total = generator.getType().getGenerationTime() * 1000;
             int percent = (int) ((elapsed * 100) / total);
             long remaining = (total - elapsed) / 1000;
             

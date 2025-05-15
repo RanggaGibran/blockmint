@@ -23,4 +23,8 @@ public abstract class BaseGUI {
     public Inventory getInventory() {
         return inventory;
     }
+    
+    public Player getPlayer() {
+        return player;
+    }
 }

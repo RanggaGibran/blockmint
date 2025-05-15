@@ -4,9 +4,13 @@ import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.gui.BaseGUI;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.inventory.InventoryHolder;
 
 public class GUIListener implements Listener {
     
@@ -16,7 +20,7 @@ public class GUIListener implements Listener {
         this.plugin = plugin;
     }
     
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGH)
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player)) {
             return;
@@ -26,7 +30,37 @@ public class GUIListener implements Listener {
         BaseGUI gui = plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
         
         if (gui != null && event.getInventory().equals(gui.getInventory())) {
+            event.setCancelled(true);
             gui.handleClick(event);
+        }
+    }
+    
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onInventoryDrag(InventoryDragEvent event) {
+        if (!(event.getWhoClicked() instanceof Player)) {
+            return;
+        }
+        
+        Player player = (Player) event.getWhoClicked();
+        BaseGUI gui = plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
+        
+        if (gui != null && event.getInventory().equals(gui.getInventory())) {
+            event.setCancelled(true);
+        }
+    }
+    
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onInventoryMoveItem(InventoryMoveItemEvent event) {
+        InventoryHolder holder = event.getDestination().getHolder();
+        if (holder instanceof Player) {
+            Player player = (Player) holder;
+            BaseGUI gui = plugin.getGUIManager().getActiveGUI(player.getUniqueId().toString());
+            
+            if (gui != null && (
+                event.getDestination().equals(gui.getInventory()) || 
+                event.getSource().equals(gui.getInventory()))) {
+                event.setCancelled(true);
+            }
         }
     }
     

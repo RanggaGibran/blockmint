@@ -33,7 +33,7 @@ public class GeneratorDetailsGUI extends BaseGUI {
     
     @Override
     public void open() {
-        inventory = Bukkit.createInventory(null, 27, ChatColor.GOLD + generator.getType().getName() + " Generator");
+        inventory = Bukkit.createInventory(player, 27, ChatColor.GOLD + generator.getType().getName() + " Generator");
         
         inventory.setItem(4, GUIManager.createGeneratorIcon(generator, generator.canGenerate()));
         
@@ -74,6 +74,12 @@ public class GeneratorDetailsGUI extends BaseGUI {
         
         inventory.setItem(18, GUIManager.createItem(Material.ARROW, "&aBack to List", null));
         
+        for (int i = 0; i < 27; i++) {
+            if (inventory.getItem(i) == null) {
+                inventory.setItem(i, GUIManager.createItem(Material.BLACK_STAINED_GLASS_PANE, " ", null));
+            }
+        }
+        
         List<String> locationLore = new ArrayList<>();
         Location loc = generator.getLocation();
         locationLore.add("&7World: &e" + loc.getWorld().getName());
@@ -87,8 +93,6 @@ public class GeneratorDetailsGUI extends BaseGUI {
     
     @Override
     public void handleClick(InventoryClickEvent event) {
-        event.setCancelled(true);
-        
         int slot = event.getRawSlot();
         if (slot >= inventory.getSize() || slot < 0) {
             return;

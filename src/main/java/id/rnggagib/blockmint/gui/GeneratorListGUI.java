@@ -38,9 +38,19 @@ public class GeneratorListGUI extends BaseGUI {
         List<Generator> playerGenerators = getPlayerGenerators();
         
         int maxPage = (playerGenerators.size() - 1) / GENERATORS_PER_PAGE;
-        if (page > maxPage) {
+        if (maxPage < 0) maxPage = 0;
+        
+        if (page > maxPage && maxPage >= 0) {
             player.sendMessage(ChatColor.RED + "This page doesn't exist!");
-            return;
+            if (maxPage == 0) {
+                GeneratorListGUI correctedGui = new GeneratorListGUI(plugin, player, 0);
+                correctedGui.open();
+                return;
+            } else {
+                GeneratorListGUI correctedGui = new GeneratorListGUI(plugin, player, maxPage);
+                correctedGui.open();
+                return;
+            }
         }
         
         int startIndex = page * GENERATORS_PER_PAGE;
@@ -62,7 +72,7 @@ public class GeneratorListGUI extends BaseGUI {
     }
     
     private void setBottomBar(int maxPage) {
-        for (int i = 36; i < 45; i++) {
+        for (int i = 36; i < 54; i++) {
             inventory.setItem(i, GUIManager.createItem(Material.BLACK_STAINED_GLASS_PANE, " ", null));
         }
         
@@ -92,8 +102,6 @@ public class GeneratorListGUI extends BaseGUI {
     
     @Override
     public void handleClick(InventoryClickEvent event) {
-        event.setCancelled(true);
-        
         int slot = event.getRawSlot();
         if (slot >= inventory.getSize() || slot < 0) {
             return;
@@ -124,6 +132,7 @@ public class GeneratorListGUI extends BaseGUI {
                 break;
             case 53:
                 int maxPage = (getPlayerGenerators().size() - 1) / GENERATORS_PER_PAGE;
+                if (maxPage < 0) maxPage = 0;
                 if (page < maxPage) {
                     GeneratorListGUI nextPage = new GeneratorListGUI(plugin, player, page + 1);
                     nextPage.open();
