@@ -1,5 +1,5 @@
 name: BlockMint
-version: '1.0.0'
+version: '1.2'
 main: id.rnggagib.BlockMint
 api-version: '1.20'
 depend: [Vault]

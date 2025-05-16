@@ -30,12 +30,7 @@ import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
@@ -155,22 +150,18 @@ public class BlockMint extends JavaPlugin {
             
             Set<Location> blockLocations = new HashSet<>();
             
-            // Collect generator locations
             for (Generator generator : generatorManager.getActiveGenerators().values()) {
                 blockLocations.add(generator.getLocation());
             }
             
-            // Collect network locations
             for (NetworkBlock network : networkManager.getNetworks().values()) {
                 blockLocations.add(network.getLocation());
             }
             
             ensureChunksLoaded(blockLocations, chunkLoadRadius, () -> {
-                // Restore physical blocks
                 networkManager.restoreNetworkBlocks();
                 generatorManager.updateBlocksIfNeeded();
                 
-                // Create holograms
                 DisplayManager.restoreAllHolograms(this);
                 
                 getLogger().info("Entity restoration completed");
@@ -179,7 +170,8 @@ public class BlockMint extends JavaPlugin {
     }
     
     public void ensureChunksLoaded(Collection<Location> locations, int radius, Runnable callback) {
-        Set<ChunkCoordinates> chunks = new HashSet<>();
+        Set<ChunkLocation> chunks = new HashSet<>();
+        Map<ChunkLocation, Double> prioritizedChunks = new HashMap<>();
         
         for (Location location : locations) {
             if (location.getWorld() == null) continue;
@@ -189,7 +181,11 @@ public class BlockMint extends JavaPlugin {
             
             for (int x = -radius; x <= radius; x++) {
                 for (int z = -radius; z <= radius; z++) {
-                    chunks.add(new ChunkCoordinates(location.getWorld(), baseChunkX + x, baseChunkZ + z));
+                    ChunkLocation coords = new ChunkLocation(location.getWorld(), baseChunkX + x, baseChunkZ + z);
+                    chunks.add(coords);
+                    
+                    double distance = Math.sqrt(x * x + z * z);
+                    prioritizedChunks.put(coords, distance);
                 }
             }
         }
@@ -199,57 +195,118 @@ public class BlockMint extends JavaPlugin {
             return;
         }
         
-        AtomicInteger remaining = new AtomicInteger(chunks.size());
-        List<ChunkCoordinates> chunkList = new ArrayList<>(chunks);
-        int batchSize = 4;
+        int serverTPS = estimateCurrentTPS();
+        int dynamicBatchSize = calculateBatchSize(serverTPS, chunks.size());
+        
+        List<ChunkLocation> sortedChunks = new ArrayList<>(chunks);
+        sortedChunks.sort(Comparator.comparingDouble(prioritizedChunks::get));
+        
+        AtomicInteger remaining = new AtomicInteger(sortedChunks.size());
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger failCount = new AtomicInteger(0);
+        long startTime = System.currentTimeMillis();
         
         getServer().getScheduler().runTask(this, () -> {
-            processChunkBatch(chunkList, 0, batchSize, remaining, callback);
+            getLogger().info("Starting to load " + remaining.get() + " chunks with batch size " + dynamicBatchSize);
+            processChunkBatch(sortedChunks, 0, dynamicBatchSize, remaining, successCount, failCount, startTime, callback);
         });
     }
     
-    private void processChunkBatch(List<ChunkCoordinates> chunks, int startIndex, int batchSize, AtomicInteger remaining, Runnable callback) {
+    private void processChunkBatch(List<ChunkLocation> chunks, int startIndex, int batchSize, 
+                                  AtomicInteger remaining, AtomicInteger successCount, AtomicInteger failCount, 
+                                  long startTime, Runnable callback) {
         int endIndex = Math.min(startIndex + batchSize, chunks.size());
+        boolean needsMoreProcessing = endIndex < chunks.size();
+        boolean isLastBatch = !needsMoreProcessing;
+        int currentServerTPS = estimateCurrentTPS();
         
         for (int i = startIndex; i < endIndex; i++) {
-            ChunkCoordinates coords = chunks.get(i);
-            coords.world.loadChunk(coords.x, coords.z, true);
+            ChunkLocation coords = chunks.get(i);
+            try {
+                if (!coords.world.isChunkLoaded(coords.x, coords.z)) {
+                    coords.world.loadChunk(coords.x, coords.z, true);
+                    successCount.incrementAndGet();
+                }
+            } catch (Exception e) {
+                getLogger().log(Level.WARNING, "Failed to load chunk at " + coords.world.getName() + 
+                           " [" + coords.x + ", " + coords.z + "]", e);
+                failCount.incrementAndGet();
+            }
             
             if (remaining.decrementAndGet() <= 0) {
+                long timeTaken = System.currentTimeMillis() - startTime;
+                getLogger().info("Chunk loading completed: " + successCount.get() + " chunks loaded, " + 
+                             failCount.get() + " failed in " + timeTaken + "ms");
                 callback.run();
                 return;
             }
         }
         
-        if (endIndex < chunks.size()) {
+        if (needsMoreProcessing) {
+            int adaptedBatchSize = adaptBatchSize(batchSize, currentServerTPS);
+            int delay = calculateDelay(currentServerTPS, adaptedBatchSize);
+            
             getServer().getScheduler().runTaskLater(this, () -> {
-                processChunkBatch(chunks, endIndex, batchSize, remaining, callback);
-            }, 1L);
+                processChunkBatch(chunks, endIndex, adaptedBatchSize, remaining, successCount, failCount, startTime, callback);
+            }, delay);
+        } else if (isLastBatch) {
+            long timeTaken = System.currentTimeMillis() - startTime;
+            getLogger().info("Chunk loading completed: " + successCount.get() + " chunks loaded, " + 
+                         failCount.get() + " failed in " + timeTaken + "ms");
+            callback.run();
         }
     }
     
-    private static class ChunkCoordinates {
-        final World world;
-        final int x;
-        final int z;
-        
-        public ChunkCoordinates(World world, int x, int z) {
-            this.world = world;
-            this.x = x;
-            this.z = z;
+    private int estimateCurrentTPS() {
+        try {
+            Runtime runtime = Runtime.getRuntime();
+            long maxMemory = runtime.maxMemory();
+            long totalMemory = runtime.totalMemory();
+            long freeMemory = runtime.freeMemory();
+            double memoryUsage = (double) (totalMemory - freeMemory) / maxMemory;
+            
+            if (memoryUsage > 0.8) {
+                return 15;
+            } else if (memoryUsage > 0.6) {
+                return 17;
+            } else {
+                return 19;
+            }
+        } catch (Exception e) {
+            return 18;
         }
-        
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            ChunkCoordinates that = (ChunkCoordinates) o;
-            return x == that.x && z == that.z && world.equals(that.world);
+    }
+    
+    private int calculateBatchSize(int tps, int totalChunks) {
+        if (tps >= 19) {
+            return Math.min(10, totalChunks);
+        } else if (tps >= 17) {
+            return Math.min(5, totalChunks);
+        } else if (tps >= 15) {
+            return Math.min(3, totalChunks);
+        } else {
+            return Math.min(2, totalChunks);
         }
-        
-        @Override
-        public int hashCode() {
-            return Objects.hash(world, x, z);
+    }
+    
+    private int adaptBatchSize(int currentBatchSize, int tps) {
+        if (tps >= 19.5) {
+            return currentBatchSize + 1;
+        } else if (tps < 18) {
+            return Math.max(1, currentBatchSize - 1);
+        }
+        return currentBatchSize;
+    }
+    
+    private int calculateDelay(int tps, int batchSize) {
+        if (tps >= 19) {
+            return 1;
+        } else if (tps >= 17) {
+            return 2;
+        } else if (tps >= 15) {
+            return 3;
+        } else {
+            return 4;
         }
     }
     
@@ -376,5 +433,30 @@ public class BlockMint extends JavaPlugin {
     
     public DependencyManager getDependencyManager() {
         return dependencyManager;
+    }
+    
+    public static class ChunkLocation {
+        final World world;
+        final int x;
+        final int z;
+        
+        public ChunkLocation(World world, int x, int z) {
+            this.world = world;
+            this.x = x;
+            this.z = z;
+        }
+        
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ChunkLocation that = (ChunkLocation) o;
+            return x == that.x && z == that.z && world.equals(that.world);
+        }
+        
+        @Override
+        public int hashCode() {
+            return Objects.hash(world, x, z);
+        }
     }
 }
