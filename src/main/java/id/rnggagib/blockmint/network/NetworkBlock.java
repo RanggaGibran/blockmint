@@ -127,9 +127,40 @@ public class NetworkBlock {
         return creationTime;
     }
     
+    public void setCreationTime(long creationTime) {
+        this.creationTime = creationTime;
+    }
+    
     public void updateBlockAppearance() {
-        Block block = location.getBlock();
-        block.setType(Material.valueOf(tier.getMaterial()));
+        if (location == null || location.getWorld() == null || !location.getChunk().isLoaded()) {
+            return;
+        }
+        
+        Material blockMaterial;
+        
+        switch (tier) {
+            case BASIC:
+                blockMaterial = Material.LODESTONE;
+                break;
+            case ADVANCED:
+                blockMaterial = Material.RESPAWN_ANCHOR;
+                break;
+            case ELITE:
+                blockMaterial = Material.BEACON;
+                break;
+            case ULTIMATE:
+                blockMaterial = Material.CONDUIT;
+                break;
+            case CELESTIAL:
+                blockMaterial = Material.END_GATEWAY;
+                break;
+            default:
+                blockMaterial = Material.LODESTONE;
+        }
+        
+        if (location.getBlock().getType() != blockMaterial) {
+            location.getBlock().setType(blockMaterial);
+        }
     }
     
     public boolean isMaxCapacity() {

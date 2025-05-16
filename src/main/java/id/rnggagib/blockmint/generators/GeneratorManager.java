@@ -120,7 +120,7 @@ public class GeneratorManager {
                 GeneratorType generatorType = generatorTypes.get(type);
                 
                 if (plugin.getServer().getWorld(world) == null) {
-                    plugin.getLogger().warning("World " + world + " not found for generator " + id + ", skipping for now");
+                    plugin.getLogger().warning("World " + world + " not found for generator " + id + ", skipping");
                     continue;
                 }
                 
@@ -146,13 +146,9 @@ public class GeneratorManager {
     }
     
     public void processLoadedGenerators() {
-        DisplayManager.removeAllHolograms();
-        activeHologramCount = 0;
-        
         plugin.getLogger().info("Processing " + pendingGenerators.size() + " generators on main thread...");
         
         int blocksPlaced = 0;
-        int hologramsCreated = 0;
         
         for (Generator generator : pendingGenerators) {
             Location location = generator.getLocation();
@@ -161,7 +157,8 @@ public class GeneratorManager {
                 continue;
             }
             
-            if (!location.isWorldLoaded() || !location.getChunk().isLoaded()) {
+            if (!location.getChunk().isLoaded()) {
+                plugin.getLogger().fine("Chunk not loaded for generator at " + formatLocation(location) + ", skipping block placement");
                 continue;
             }
             
@@ -170,19 +167,13 @@ public class GeneratorManager {
                     location.getBlock().setType(Material.valueOf(generator.getType().getMaterial()));
                     blocksPlaced++;
                 }
-                
-                if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true)) {
-                    DisplayManager.createHologram(plugin, location, generator.getType(), generator.getLevel());
-                    activeHologramCount++;
-                    hologramsCreated++;
-                }
             } catch (Exception e) {
-                plugin.getLogger().log(Level.WARNING, "Error setting block/hologram for generator " + generator.getId() + ": " + e.getMessage());
+                plugin.getLogger().log(Level.WARNING, "Error setting block for generator at " + formatLocation(location) + ": " + e.getMessage());
             }
         }
         
         pendingGenerators.clear();
-        plugin.getLogger().info("Generator processing complete: " + blocksPlaced + " blocks placed, " + hologramsCreated + " holograms created");
+        plugin.getLogger().info("Generator processing complete: " + blocksPlaced + " blocks placed");
     }
     
     private String formatLocation(Location loc) {

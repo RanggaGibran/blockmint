@@ -40,9 +40,14 @@ public class NetworkManager {
     public void initialize() {
         createNetworkTables();
         loadNetworksFromDatabase();
+        
+        // Initialize permission manager after networks are loaded
         permissionManager = new NetworkPermissionManager(plugin);
         permissionManager.initialize();
+        
         startNetworkVisualizerTask();
+        
+        plugin.getLogger().info("Network manager initialized with " + networks.size() + " networks");
     }
     
     private void createNetworkTables() {
@@ -86,8 +91,10 @@ public class NetworkManager {
             );
             
             ResultSet rs = stmt.executeQuery();
+            int count = 0;
             
             while (rs.next()) {
+                count++;
                 int networkId = rs.getInt("id");
                 UUID owner = UUID.fromString(rs.getString("owner"));
                 String name = rs.getString("name");
@@ -108,12 +115,13 @@ public class NetworkManager {
                 Location location = new Location(plugin.getServer().getWorld(world), x, y, z);
                 
                 NetworkBlock network = new NetworkBlock(networkId, location, owner, name, tier);
+                network.setCreationTime(creationTime);
                 networks.put(networkId, network);
                 
                 loadNetworkGenerators(network);
             }
             
-            plugin.getLogger().info("Loaded " + networks.size() + " network blocks");
+            plugin.getLogger().info("Loaded " + networks.size() + " network blocks from " + count + " database records");
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to load networks from database", e);
         }
@@ -571,8 +579,26 @@ public class NetworkManager {
     }
     
     public void restoreNetworkBlocks() {
+        int restored = 0;
+        
         for (NetworkBlock network : networks.values()) {
-            network.updateBlockAppearance();
+            Location location = network.getLocation();
+            
+            if (location.getWorld() != null && location.getChunk().isLoaded()) {
+                network.updateBlockAppearance();
+                restored++;
+            }
+        }
+        
+        plugin.getLogger().info("Restored " + restored + " network blocks");
+    }
+    
+    private void restoreNetworkHolograms() {
+        plugin.getLogger().info("Restoring network holograms for " + networks.size() + " networks");
+        
+        for (NetworkBlock network : networks.values()) {
+            Location location = network.getLocation();
+            DisplayManager.createNetworkHologram(location, network);
         }
     }
     
