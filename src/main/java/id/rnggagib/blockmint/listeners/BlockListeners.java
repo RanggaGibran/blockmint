@@ -4,6 +4,7 @@ import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.generators.GeneratorType;
 import id.rnggagib.blockmint.utils.DisplayManager;
+import id.rnggagib.blockmint.utils.GeneratorItemManager;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -37,27 +38,26 @@ public class BlockListeners implements Listener {
     
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        Block block = event.getBlock();
-        Player player = event.getPlayer();
-        String material = block.getType().name();
+        ItemStack itemInHand = event.getItemInHand();
+        String generatorTypeId = GeneratorItemManager.getGeneratorType(itemInHand);
         
-        Map<String, GeneratorType> generatorTypes = plugin.getGeneratorManager().getGeneratorTypes();
-        GeneratorType generatorType = null;
-        
-        for (GeneratorType type : generatorTypes.values()) {
-            if (type.getMaterial().equals(material)) {
-                generatorType = type;
-                break;
-            }
+        // If there's no generator metadata, it's a regular block
+        if (generatorTypeId == null) {
+            return;
         }
         
+        Block block = event.getBlock();
+        Player player = event.getPlayer();
+        
+        GeneratorType generatorType = plugin.getGeneratorManager().getGeneratorTypes().get(generatorTypeId);
         if (generatorType == null) {
+            plugin.getLogger().warning("Attempted to place unknown generator type: " + generatorTypeId);
             return;
         }
         
         if (!player.hasPermission("blockmint.use")) {
-            event.setCancelled(true);
             plugin.getMessageManager().send(player, "general.no-permission");
+            event.setCancelled(true);
             return;
         }
         
