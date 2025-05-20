@@ -25,12 +25,16 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class BlockListeners implements Listener {
     
     private final BlockMint plugin;
-    private final Map<UUID, Long> lastPickupAttempt = new HashMap<>();
+    private final Map<UUID, Long> lastPickupAttempt = new ConcurrentHashMap<>(16, 0.75f, 2);
     private final long CONFIRMATION_DELAY_MS = 3000;
+    private final Map<UUID, Integer> generatorCountCache = new ConcurrentHashMap<>(32, 0.75f, 2);
+    private final Map<UUID, Long> generatorCountCacheExpiry = new ConcurrentHashMap<>(32, 0.75f, 2);
+    private final long COUNT_CACHE_DURATION_MS = 60000; // 1 minute cache
     
     public BlockListeners(BlockMint plugin) {
         this.plugin = plugin;
@@ -41,7 +45,6 @@ public class BlockListeners implements Listener {
         ItemStack itemInHand = event.getItemInHand();
         String generatorTypeId = GeneratorItemManager.getGeneratorType(itemInHand);
         
-        // If there's no generator metadata, it's a regular block
         if (generatorTypeId == null) {
             return;
         }
@@ -62,9 +65,9 @@ public class BlockListeners implements Listener {
         }
         
         int maxGenerators = plugin.getConfigManager().getConfig().getInt("settings.max-generators-per-player", 10);
-        if (maxGenerators > 0) {
-            int playerGenerators = countPlayerGenerators(player.getUniqueId());
-            if (playerGenerators >= maxGenerators && !player.hasPermission("blockmint.bypass.limit")) {
+        if (maxGenerators > 0 && !player.hasPermission("blockmint.bypass.limit")) {
+            int playerGenerators = getPlayerGeneratorCount(player.getUniqueId());
+            if (playerGenerators >= maxGenerators) {
                 event.setCancelled(true);
                 Map<String, String> placeholders = new HashMap<>();
                 placeholders.put("limit", String.valueOf(maxGenerators));
@@ -80,6 +83,7 @@ public class BlockListeners implements Listener {
         );
         
         if (success) {
+            invalidateGeneratorCountCache(player.getUniqueId());
             plugin.getMessageManager().send(player, "general.generator-placed");
             if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true)) {
                 DisplayManager.createHologram(plugin, block.getLocation(), generatorType, 1);
@@ -89,11 +93,7 @@ public class BlockListeners implements Listener {
     
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerInteract(PlayerInteractEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND) {
-            return;
-        }
-        
-        if (event.getClickedBlock() == null) {
+        if (event.getHand() != EquipmentSlot.HAND || event.getClickedBlock() == null) {
             return;
         }
         
@@ -113,35 +113,31 @@ public class BlockListeners implements Listener {
             return;
         }
         
-        switch (event.getAction()) {
-            case RIGHT_CLICK_BLOCK:
-                if (player.isSneaking() && player.hasPermission("blockmint.upgrade")) {
-                    upgradeGenerator(player, generator);
-                } else {
-                    collectGenerator(player, generator);
-                }
-                break;
-            case LEFT_CLICK_BLOCK:
-                showGeneratorInfo(player, generator);
-                break;
-            default:
-                break;
+        Action action = event.getAction();
+        if (action == Action.RIGHT_CLICK_BLOCK) {
+            if (player.isSneaking() && player.hasPermission("blockmint.upgrade")) {
+                upgradeGenerator(player, generator);
+            } else {
+                collectGenerator(player, generator);
+            }
+        } else if (action == Action.LEFT_CLICK_BLOCK) {
+            showGeneratorInfo(player, generator);
         }
     }
     
     private void attemptPickupGenerator(Player player, Generator generator, Location location, Block block) {
-        if (!generator.getOwner().equals(player.getUniqueId()) && 
+        UUID playerUUID = player.getUniqueId();
+        
+        if (!generator.getOwner().equals(playerUUID) && 
             !player.hasPermission("blockmint.admin.remove")) {
             plugin.getMessageManager().send(player, "general.no-permission");
             return;
         }
         
-        UUID playerUUID = player.getUniqueId();
         long now = System.currentTimeMillis();
+        Long lastAttempt = lastPickupAttempt.get(playerUUID);
         
-        if (lastPickupAttempt.containsKey(playerUUID) && 
-            now - lastPickupAttempt.get(playerUUID) < CONFIRMATION_DELAY_MS) {
-            
+        if (lastAttempt != null && now - lastAttempt < CONFIRMATION_DELAY_MS) {
             if (plugin.getGeneratorManager().removeGenerator(location)) {
                 ItemStack generatorItem = plugin.getUtils().getGeneratorItemManager().createGeneratorItem(generator.getType());
                 HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(generatorItem);
@@ -158,6 +154,7 @@ public class BlockListeners implements Listener {
                 
                 DisplayManager.removeHologram(location);
                 block.setType(Material.AIR);
+                invalidateGeneratorCountCache(playerUUID);
             } else {
                 plugin.getMessageManager().send(player, "general.generator-removed-failed");
             }
@@ -180,6 +177,27 @@ public class BlockListeners implements Listener {
         }
         
         event.setCancelled(true);
+    }
+    
+    private int getPlayerGeneratorCount(UUID playerUUID) {
+        long now = System.currentTimeMillis();
+        
+        if (generatorCountCache.containsKey(playerUUID)) {
+            Long expiry = generatorCountCacheExpiry.get(playerUUID);
+            if (expiry != null && now < expiry) {
+                return generatorCountCache.get(playerUUID);
+            }
+        }
+        
+        int count = countPlayerGenerators(playerUUID);
+        generatorCountCache.put(playerUUID, count);
+        generatorCountCacheExpiry.put(playerUUID, now + COUNT_CACHE_DURATION_MS);
+        return count;
+    }
+    
+    private void invalidateGeneratorCountCache(UUID playerUUID) {
+        generatorCountCache.remove(playerUUID);
+        generatorCountCacheExpiry.remove(playerUUID);
     }
     
     private int countPlayerGenerators(UUID playerUUID) {
@@ -212,7 +230,7 @@ public class BlockListeners implements Listener {
         placeholders.put("amount", String.format("%.2f", value));
         plugin.getMessageManager().send(player, "general.collect-success", placeholders);
         
-        updatePlayerEarnings(player.getUniqueId(), value);
+        updatePlayerEarningsAsync(player.getUniqueId(), value);
         DisplayManager.updateHologram(plugin, generator);
     }
     
@@ -237,23 +255,30 @@ public class BlockListeners implements Listener {
         int newLevel = generator.getLevel() + 1;
         generator.setLevel(newLevel);
         
-        try {
-            PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
-                    "UPDATE generators SET level = ? WHERE id = ?"
-            );
-            stmt.setInt(1, newLevel);
-            stmt.setInt(2, generator.getId());
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Could not update generator level in database: " + e.getMessage());
-            return;
-        }
-        
-        Map<String, String> placeholders = new HashMap<>();
-        placeholders.put("level", String.valueOf(newLevel));
-        plugin.getMessageManager().send(player, "general.upgrade-success", placeholders);
-        
-        DisplayManager.updateHologram(plugin, generator);
+        updateGeneratorLevelAsync(generator.getId(), newLevel, player, generator);
+    }
+    
+    private void updateGeneratorLevelAsync(final int generatorId, final int newLevel, final Player player, final Generator generator) {
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
+                        "UPDATE generators SET level = ? WHERE id = ?"
+                );
+                stmt.setInt(1, newLevel);
+                stmt.setInt(2, generatorId);
+                stmt.executeUpdate();
+                
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    Map<String, String> placeholders = new HashMap<>();
+                    placeholders.put("level", String.valueOf(newLevel));
+                    plugin.getMessageManager().send(player, "general.upgrade-success", placeholders);
+                    
+                    DisplayManager.updateHologram(plugin, generator);
+                });
+            } catch (SQLException e) {
+                plugin.getLogger().severe("Could not update generator level in database: " + e.getMessage());
+            }
+        });
     }
     
     private void showGeneratorInfo(Player player, Generator generator) {
@@ -279,17 +304,19 @@ public class BlockListeners implements Listener {
         }
     }
     
-    private void updatePlayerEarnings(UUID playerUUID, double amount) {
-        try {
-            PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
-                    "UPDATE player_stats SET total_earnings = total_earnings + ? WHERE uuid = ?"
-            );
-            stmt.setDouble(1, amount);
-            stmt.setString(2, playerUUID.toString());
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Could not update player earnings in database: " + e.getMessage());
-        }
+    private void updatePlayerEarningsAsync(final UUID playerUUID, final double amount) {
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
+                        "UPDATE player_stats SET total_earnings = total_earnings + ? WHERE uuid = ?"
+                );
+                stmt.setDouble(1, amount);
+                stmt.setString(2, playerUUID.toString());
+                stmt.executeUpdate();
+            } catch (SQLException e) {
+                plugin.getLogger().severe("Could not update player earnings in database: " + e.getMessage());
+            }
+        });
     }
     
     private String formatTime(long seconds) {
