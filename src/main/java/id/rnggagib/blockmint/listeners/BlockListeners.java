@@ -26,15 +26,19 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class BlockListeners implements Listener {
     
     private final BlockMint plugin;
-    private final Map<UUID, Long> lastPickupAttempt = new ConcurrentHashMap<>(16, 0.75f, 2);
+    private final ConcurrentHashMap<UUID, Long> lastPickupAttempt = new ConcurrentHashMap<>(16, 0.75f, 4);
     private final long CONFIRMATION_DELAY_MS = 3000;
-    private final Map<UUID, Integer> generatorCountCache = new ConcurrentHashMap<>(32, 0.75f, 2);
-    private final Map<UUID, Long> generatorCountCacheExpiry = new ConcurrentHashMap<>(32, 0.75f, 2);
-    private final long COUNT_CACHE_DURATION_MS = 60000; // 1 minute cache
+    private final ConcurrentHashMap<UUID, Integer> generatorCountCache = new ConcurrentHashMap<>(32, 0.75f, 8);
+    private final ConcurrentHashMap<UUID, Long> generatorCountCacheExpiry = new ConcurrentHashMap<>(32, 0.75f, 8);
+    private final long COUNT_CACHE_DURATION_MS = 60000;
+    private final ReentrantReadWriteLock cacheLock = new ReentrantReadWriteLock();
+    private final AtomicInteger pendingAsyncOperations = new AtomicInteger(0);
     
     public BlockListeners(BlockMint plugin) {
         this.plugin = plugin;
@@ -182,32 +186,45 @@ public class BlockListeners implements Listener {
     private int getPlayerGeneratorCount(UUID playerUUID) {
         long now = System.currentTimeMillis();
         
-        if (generatorCountCache.containsKey(playerUUID)) {
-            Long expiry = generatorCountCacheExpiry.get(playerUUID);
-            if (expiry != null && now < expiry) {
-                return generatorCountCache.get(playerUUID);
+        cacheLock.readLock().lock();
+        try {
+            if (generatorCountCache.containsKey(playerUUID)) {
+                Long expiry = generatorCountCacheExpiry.get(playerUUID);
+                if (expiry != null && now < expiry) {
+                    return generatorCountCache.get(playerUUID);
+                }
             }
+        } finally {
+            cacheLock.readLock().unlock();
         }
         
         int count = countPlayerGenerators(playerUUID);
-        generatorCountCache.put(playerUUID, count);
-        generatorCountCacheExpiry.put(playerUUID, now + COUNT_CACHE_DURATION_MS);
+        
+        cacheLock.writeLock().lock();
+        try {
+            generatorCountCache.put(playerUUID, count);
+            generatorCountCacheExpiry.put(playerUUID, now + COUNT_CACHE_DURATION_MS);
+        } finally {
+            cacheLock.writeLock().unlock();
+        }
+        
         return count;
     }
     
     private void invalidateGeneratorCountCache(UUID playerUUID) {
-        generatorCountCache.remove(playerUUID);
-        generatorCountCacheExpiry.remove(playerUUID);
+        cacheLock.writeLock().lock();
+        try {
+            generatorCountCache.remove(playerUUID);
+            generatorCountCacheExpiry.remove(playerUUID);
+        } finally {
+            cacheLock.writeLock().unlock();
+        }
     }
     
     private int countPlayerGenerators(UUID playerUUID) {
-        int count = 0;
-        for (Generator generator : plugin.getGeneratorManager().getActiveGenerators().values()) {
-            if (generator.getOwner().equals(playerUUID)) {
-                count++;
-            }
-        }
-        return count;
+        return (int) plugin.getGeneratorManager().getActiveGenerators().values().stream()
+                .filter(generator -> generator.getOwner().equals(playerUUID))
+                .count();
     }
     
     private void collectGenerator(Player player, Generator generator) {
@@ -259,6 +276,7 @@ public class BlockListeners implements Listener {
     }
     
     private void updateGeneratorLevelAsync(final int generatorId, final int newLevel, final Player player, final Generator generator) {
+        pendingAsyncOperations.incrementAndGet();
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
                 PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
@@ -274,9 +292,11 @@ public class BlockListeners implements Listener {
                     plugin.getMessageManager().send(player, "general.upgrade-success", placeholders);
                     
                     DisplayManager.updateHologram(plugin, generator);
+                    pendingAsyncOperations.decrementAndGet();
                 });
             } catch (SQLException e) {
                 plugin.getLogger().severe("Could not update generator level in database: " + e.getMessage());
+                pendingAsyncOperations.decrementAndGet();
             }
         });
     }
@@ -305,6 +325,7 @@ public class BlockListeners implements Listener {
     }
     
     private void updatePlayerEarningsAsync(final UUID playerUUID, final double amount) {
+        pendingAsyncOperations.incrementAndGet();
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
                 PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
@@ -315,6 +336,8 @@ public class BlockListeners implements Listener {
                 stmt.executeUpdate();
             } catch (SQLException e) {
                 plugin.getLogger().severe("Could not update player earnings in database: " + e.getMessage());
+            } finally {
+                pendingAsyncOperations.decrementAndGet();
             }
         });
     }
@@ -335,5 +358,21 @@ public class BlockListeners implements Listener {
         minutes = minutes % 60;
         
         return hours + "h " + minutes + "m " + seconds + "s";
+    }
+    
+    public int getPendingAsyncOperations() {
+        return pendingAsyncOperations.get();
+    }
+    
+    public void clearCaches() {
+        cacheLock.writeLock().lock();
+        try {
+            generatorCountCache.clear();
+            generatorCountCacheExpiry.clear();
+        } finally {
+            cacheLock.writeLock().unlock();
+        }
+        
+        lastPickupAttempt.clear();
     }
 }
