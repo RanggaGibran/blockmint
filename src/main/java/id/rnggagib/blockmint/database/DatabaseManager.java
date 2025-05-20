@@ -2,6 +2,7 @@ package id.rnggagib.blockmint.database;
 
 import id.rnggagib.BlockMint;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.sql.Connection;
@@ -10,12 +11,26 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 
 public class DatabaseManager {
     
     private final BlockMint plugin;
     private Connection connection;
+    private final AtomicInteger pendingQueries = new AtomicInteger(0);
+    private final ConcurrentHashMap<UUID, BukkitTask> activeTasks = new ConcurrentHashMap<>();
+    private final Map<UUID, List<BatchOperation>> batchOperations = new ConcurrentHashMap<>();
+    private final long batchTimeThreshold = 2000; // 2 seconds
+    private final int batchSizeThreshold = 20; // 20 operations
     
     public DatabaseManager(BlockMint plugin) {
         this.plugin = plugin;
@@ -37,6 +52,8 @@ public class DatabaseManager {
         
         setupTables();
         verifyTableStructure();
+        
+        startBatchProcessor();
     }
     
     private void initializeSQLite() {
@@ -186,5 +203,248 @@ public class DatabaseManager {
                 plugin.getLogger().log(Level.SEVERE, "Error closing database connection!", e);
             }
         }
+    }
+    
+    public void executeAsync(String sql, Consumer<ResultSet> resultHandler) {
+        executeAsync(sql, resultHandler, null);
+    }
+    
+    public void executeAsync(String sql, Consumer<ResultSet> resultHandler, Consumer<SQLException> errorHandler) {
+        pendingQueries.incrementAndGet();
+        UUID taskId = UUID.randomUUID();
+        
+        BukkitTask task = plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                ResultSet resultSet = executeQuery(sql);
+                
+                if (resultHandler != null) {
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        try {
+                            resultHandler.accept(resultSet);
+                        } catch (Exception e) {
+                            plugin.getLogger().log(Level.SEVERE, "Error in query result handler", e);
+                        } finally {
+                            try {
+                                resultSet.close();
+                            } catch (SQLException e) {
+                                plugin.getLogger().log(Level.WARNING, "Error closing result set", e);
+                            }
+                        }
+                    });
+                }
+            } catch (SQLException e) {
+                if (errorHandler != null) {
+                    plugin.getServer().getScheduler().runTask(plugin, () -> errorHandler.accept(e));
+                } else {
+                    plugin.getLogger().log(Level.SEVERE, "Error executing async query: " + sql, e);
+                }
+            } finally {
+                pendingQueries.decrementAndGet();
+                activeTasks.remove(taskId);
+            }
+        });
+        
+        activeTasks.put(taskId, task);
+    }
+    
+    public void updateAsync(String sql, Consumer<Integer> resultHandler, Consumer<SQLException> errorHandler) {
+        pendingQueries.incrementAndGet();
+        UUID taskId = UUID.randomUUID();
+        
+        BukkitTask task = plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                int result = executeUpdate(sql);
+                
+                if (resultHandler != null) {
+                    plugin.getServer().getScheduler().runTask(plugin, () -> resultHandler.accept(result));
+                }
+            } catch (SQLException e) {
+                if (errorHandler != null) {
+                    plugin.getServer().getScheduler().runTask(plugin, () -> errorHandler.accept(e));
+                } else {
+                    plugin.getLogger().log(Level.SEVERE, "Error executing async update: " + sql, e);
+                }
+            } finally {
+                pendingQueries.decrementAndGet();
+                activeTasks.remove(taskId);
+            }
+        });
+        
+        activeTasks.put(taskId, task);
+    }
+    
+    public void updateAsync(String sql) {
+        updateAsync(sql, null, null);
+    }
+    
+    public CompletableFuture<ResultSet> queryAsync(String sql) {
+        CompletableFuture<ResultSet> future = new CompletableFuture<>();
+        
+        executeAsync(sql, 
+            resultSet -> future.complete(resultSet), 
+            error -> future.completeExceptionally(error)
+        );
+        
+        return future;
+    }
+    
+    public CompletableFuture<Integer> updateAsync(String sql, Object... params) {
+        CompletableFuture<Integer> future = new CompletableFuture<>();
+        
+        pendingQueries.incrementAndGet();
+        UUID taskId = UUID.randomUUID();
+        
+        BukkitTask task = plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                PreparedStatement stmt = prepareStatement(sql);
+                for (int i = 0; i < params.length; i++) {
+                    stmt.setObject(i + 1, params[i]);
+                }
+                
+                int result = stmt.executeUpdate();
+                future.complete(result);
+            } catch (SQLException e) {
+                future.completeExceptionally(e);
+                plugin.getLogger().log(Level.SEVERE, "Error executing async update with parameters", e);
+            } finally {
+                pendingQueries.decrementAndGet();
+                activeTasks.remove(taskId);
+            }
+        });
+        
+        activeTasks.put(taskId, task);
+        return future;
+    }
+    
+    public <T> CompletableFuture<T> queryWithMapperAsync(String sql, ResultSetMapper<T> mapper) {
+        CompletableFuture<T> future = new CompletableFuture<>();
+        
+        pendingQueries.incrementAndGet();
+        UUID taskId = UUID.randomUUID();
+        
+        BukkitTask task = plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try (PreparedStatement stmt = prepareStatement(sql);
+                 ResultSet rs = stmt.executeQuery()) {
+                
+                T result = mapper.map(rs);
+                future.complete(result);
+            } catch (SQLException e) {
+                future.completeExceptionally(e);
+                plugin.getLogger().log(Level.SEVERE, "Error executing async query with mapper", e);
+            } finally {
+                pendingQueries.decrementAndGet();
+                activeTasks.remove(taskId);
+            }
+        });
+        
+        activeTasks.put(taskId, task);
+        return future;
+    }
+    
+    public void addBatchOperation(String sql, Object[] params) {
+        UUID playerUUID = UUID.randomUUID(); // Generic batch for non-player operations
+        addBatchOperation(playerUUID, sql, params);
+    }
+    
+    public void addBatchOperation(UUID playerUUID, String sql, Object[] params) {
+        BatchOperation operation = new BatchOperation(sql, params, System.currentTimeMillis());
+        
+        batchOperations.computeIfAbsent(playerUUID, k -> new ArrayList<>()).add(operation);
+        
+        List<BatchOperation> playerBatch = batchOperations.get(playerUUID);
+        if (playerBatch.size() >= batchSizeThreshold) {
+            executeBatch(playerUUID);
+        }
+    }
+    
+    private void startBatchProcessor() {
+        plugin.getServer().getScheduler().runTaskTimerAsynchronously(plugin, this::processBatchOperations, 100L, 100L);
+    }
+    
+    private void processBatchOperations() {
+        long now = System.currentTimeMillis();
+        
+        for (UUID playerUUID : new ArrayList<>(batchOperations.keySet())) {
+            List<BatchOperation> operations = batchOperations.get(playerUUID);
+            if (operations == null || operations.isEmpty()) continue;
+            
+            BatchOperation oldest = operations.get(0);
+            if (now - oldest.timestamp > batchTimeThreshold) {
+                executeBatch(playerUUID);
+            }
+        }
+    }
+    
+    private void executeBatch(UUID playerUUID) {
+        List<BatchOperation> operations = batchOperations.remove(playerUUID);
+        if (operations == null || operations.isEmpty()) return;
+        
+        // Group operations by SQL query
+        Map<String, List<Object[]>> groupedOperations = new HashMap<>();
+        for (BatchOperation op : operations) {
+            groupedOperations.computeIfAbsent(op.sql, k -> new ArrayList<>()).add(op.params);
+        }
+        
+        // Execute each group as a batch
+        for (Map.Entry<String, List<Object[]>> entry : groupedOperations.entrySet()) {
+            String sql = entry.getKey();
+            List<Object[]> paramSets = entry.getValue();
+            
+            pendingQueries.incrementAndGet();
+            
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                try (PreparedStatement stmt = prepareStatement(sql)) {
+                    for (Object[] params : paramSets) {
+                        for (int i = 0; i < params.length; i++) {
+                            stmt.setObject(i + 1, params[i]);
+                        }
+                        stmt.addBatch();
+                    }
+                    
+                    stmt.executeBatch();
+                } catch (SQLException e) {
+                    plugin.getLogger().log(Level.SEVERE, "Error executing batch operation", e);
+                } finally {
+                    pendingQueries.decrementAndGet();
+                }
+            });
+        }
+    }
+    
+    public void waitForPendingOperations() {
+        while (pendingQueries.get() > 0) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                break;
+            }
+        }
+    }
+    
+    public int getPendingQueriesCount() {
+        return pendingQueries.get();
+    }
+    
+    public void cancelAllTasks() {
+        for (BukkitTask task : activeTasks.values()) {
+            task.cancel();
+        }
+        activeTasks.clear();
+    }
+    
+    private static class BatchOperation {
+        final String sql;
+        final Object[] params;
+        final long timestamp;
+        
+        BatchOperation(String sql, Object[] params, long timestamp) {
+            this.sql = sql;
+            this.params = params;
+            this.timestamp = timestamp;
+        }
+    }
+    
+    public interface ResultSetMapper<T> {
+        T map(ResultSet rs) throws SQLException;
     }
 }
