@@ -166,6 +166,7 @@ public class DisplayManager {
         List<String> generatorLines = new ArrayList<>();
         generatorLines.add("{name} Generator");
         generatorLines.add("Level {level}/{maxLevel}");
+        generatorLines.add("Value: {value}");
         generatorLines.add("Owner: {owner}");
         
         Function<Location, List<String>> generatorTextProvider = (location) -> {
@@ -175,6 +176,17 @@ public class DisplayManager {
             List<String> result = new ArrayList<>();
             result.add(generator.getType().getName() + " Generator");
             result.add("Level " + generator.getLevel() + "/" + generator.getType().getMaxLevel());
+            
+            // Include economy multiplier indicator with color
+            double ecoMultiplier = generator.getEconomyMultiplier();
+            String multiplierDisplay = "";
+            if (ecoMultiplier > 1.1) {
+                multiplierDisplay = " §a(+" + String.format("%.1f", (ecoMultiplier - 1.0) * 100) + "%)";
+            } else if (ecoMultiplier < 0.9) {
+                multiplierDisplay = " §c(" + String.format("%.1f", (ecoMultiplier - 1.0) * 100) + "%)";
+            }
+            
+            result.add("Value: $" + String.format("%.2f", generator.getValue()) + multiplierDisplay);
             
             String ownerName = plugin.getServer().getOfflinePlayer(generator.getOwner()).getName();
             if (ownerName == null) ownerName = "Unknown";

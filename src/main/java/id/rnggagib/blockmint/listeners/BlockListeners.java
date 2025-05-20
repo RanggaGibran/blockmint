@@ -334,6 +334,9 @@ public class BlockListeners implements Listener {
                 stmt.setDouble(1, amount);
                 stmt.setString(2, playerUUID.toString());
                 stmt.executeUpdate();
+                
+                // Log the transaction for economic analysis
+                plugin.getEconomyManager().logTransaction(playerUUID, amount, "generator_collect");
             } catch (SQLException e) {
                 plugin.getLogger().severe("Could not update player earnings in database: " + e.getMessage());
             } finally {

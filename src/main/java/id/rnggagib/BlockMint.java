@@ -22,6 +22,7 @@ import id.rnggagib.blockmint.utils.DependencyManager;
 import id.rnggagib.blockmint.network.NetworkBlock;
 import id.rnggagib.blockmint.network.NetworkTier;
 import id.rnggagib.blockmint.generators.Generator;
+import id.rnggagib.blockmint.economy.EconomyManager;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -50,6 +51,7 @@ public class BlockMint extends JavaPlugin {
     private NetworkManager networkManager;
     private NetworkGUIManager networkGUIManager;
     private DependencyManager dependencyManager;
+    private EconomyManager economyManager;
     private boolean isFullyEnabled = false;
     
     @Override
@@ -102,6 +104,8 @@ public class BlockMint extends JavaPlugin {
     private void loadManagers() {
         generatorManager = new GeneratorManager(this);
         generatorManager.loadGeneratorTypes();
+        
+        economyManager = new EconomyManager(this);
         
         networkManager = new NetworkManager(this);
         
@@ -319,6 +323,10 @@ public class BlockMint extends JavaPlugin {
         getLogger().info("Removing all generator holograms...");
         DisplayManager.removeAllHolograms();
         
+        if (economyManager != null) {
+            economyManager.shutdown();
+        }
+        
         if (networkManager != null) {
             networkManager.shutdown();
         }
@@ -433,6 +441,10 @@ public class BlockMint extends JavaPlugin {
     
     public DependencyManager getDependencyManager() {
         return dependencyManager;
+    }
+    
+    public EconomyManager getEconomyManager() {
+        return economyManager;
     }
     
     public static class ChunkLocation {

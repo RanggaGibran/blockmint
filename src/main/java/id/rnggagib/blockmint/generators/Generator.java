@@ -59,14 +59,38 @@ public class Generator {
     }
     
     public boolean canGenerate() {
-        return System.currentTimeMillis() - lastGeneration >= type.getGenerationTime() * 1000;
+        return System.currentTimeMillis() - lastGeneration >= getAdjustedGenerationTime() * 1000;
     }
     
     public double getValue() {
         double baseValue = type.getBaseValue() * Math.pow(type.getValueMultiplier(), level - 1);
         double networkBonus = getNetworkBonus();
+        double economyMultiplier = getEconomyMultiplier();
         
-        return baseValue * (1 + networkBonus);
+        return baseValue * (1 + networkBonus) * economyMultiplier;
+    }
+    
+    public long getAdjustedGenerationTime() {
+        // For high demand periods, slightly reduce generation time
+        double economyMultiplier = getEconomyMultiplier();
+        long baseTime = type.getGenerationTime();
+        
+        if (economyMultiplier > 1.0) {
+            // Higher multiplier = slight reduction in time (max 20%)
+            return (long)(baseTime * (1.0 - Math.min(0.2, (economyMultiplier - 1.0) * 0.5)));
+        } else if (economyMultiplier < 1.0) {
+            // Lower multiplier = slight increase in time (max 30%)
+            return (long)(baseTime * (1.0 + Math.min(0.3, (1.0 - economyMultiplier) * 0.7)));
+        }
+        
+        return baseTime;
+    }
+    
+    public double getEconomyMultiplier() {
+        if (BlockMint.getInstance().getEconomyManager() != null) {
+            return BlockMint.getInstance().getEconomyManager().getGeneratorValueMultiplier(type.getId());
+        }
+        return 1.0;
     }
     
     public double getNetworkBonus() {
@@ -84,5 +108,42 @@ public class Generator {
             }
         }
         return -1;
+    }
+    
+    public String getTimeLeftString() {
+        if (canGenerate()) {
+            return "Ready";
+        }
+        
+        long elapsed = System.currentTimeMillis() - lastGeneration;
+        long total = getAdjustedGenerationTime() * 1000;
+        long remaining = total - elapsed;
+        long seconds = remaining / 1000;
+        
+        if (seconds < 60) {
+            return seconds + "s";
+        }
+        
+        long minutes = seconds / 60;
+        seconds = seconds % 60;
+        
+        if (minutes < 60) {
+            return minutes + "m " + seconds + "s";
+        }
+        
+        long hours = minutes / 60;
+        minutes = minutes % 60;
+        
+        return hours + "h " + minutes + "m " + seconds + "s";
+    }
+    
+    public int getProgressPercent() {
+        if (canGenerate()) {
+            return 100;
+        }
+        
+        long elapsed = System.currentTimeMillis() - lastGeneration;
+        long total = getAdjustedGenerationTime() * 1000;
+        return (int) ((elapsed * 100) / total);
     }
 }

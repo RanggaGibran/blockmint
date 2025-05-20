@@ -175,9 +175,25 @@ public class DatabaseManager {
                     "total_earnings REAL DEFAULT 0.0" +
                     ")");
             
+            // New tables for economic tracking
+            statement.execute("CREATE TABLE IF NOT EXISTS economic_transactions (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "player_uuid TEXT NOT NULL, " +
+                    "amount REAL NOT NULL, " +
+                    "source TEXT NOT NULL, " +
+                    "timestamp BIGINT NOT NULL" +
+                    ")");
+            
+            statement.execute("CREATE TABLE IF NOT EXISTS economy_balances (" +
+                    "player_uuid TEXT PRIMARY KEY, " +
+                    "balance REAL NOT NULL, " +
+                    "last_updated BIGINT NOT NULL" +
+                    ")");
+                    
             statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_owner ON generators(owner)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_type ON generators(type)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_world ON generators(world)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON economic_transactions(timestamp)");
             
             plugin.getLogger().info("Database tables and indexes initialized successfully.");
         } catch (SQLException e) {

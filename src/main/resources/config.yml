@@ -90,6 +90,18 @@ economy:
   # Starting value for economy
   starting-value: 10.0
 
+  smart-generation:
+    enabled: true
+    base-multiplier: 1.0
+    min-multiplier: 0.5
+    max-multiplier: 2.0
+    inflation-threshold: 0.05
+    inflation-control: 0.8
+    activity-impact: 0.1
+    saturation-control: 0.2
+    expected-players: 20
+    expected-generators: 1000
+
 # Database Settings
 database:
   # How often to save data (in minutes)
