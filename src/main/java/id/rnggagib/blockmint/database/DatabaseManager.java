@@ -1,5 +1,7 @@
 package id.rnggagib.blockmint.database;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import id.rnggagib.BlockMint;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.scheduler.BukkitTask;
@@ -18,6 +20,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -26,11 +29,17 @@ public class DatabaseManager {
     
     private final BlockMint plugin;
     private Connection connection;
+    private HikariDataSource connectionPool;
     private final AtomicInteger pendingQueries = new AtomicInteger(0);
     private final ConcurrentHashMap<UUID, BukkitTask> activeTasks = new ConcurrentHashMap<>();
     private final Map<UUID, List<BatchOperation>> batchOperations = new ConcurrentHashMap<>();
-    private final long batchTimeThreshold = 2000; // 2 seconds
-    private final int batchSizeThreshold = 20; // 20 operations
+    private final long batchTimeThreshold = 2000;
+    private final int batchSizeThreshold = 20;
+    
+    private final Map<String, PreparedStatement> statementCache = new ConcurrentHashMap<>();
+    private final Map<String, CachedQueryResult<?>> queryResultCache = new ConcurrentHashMap<>();
+    private final long DEFAULT_CACHE_EXPIRY = TimeUnit.MINUTES.toMillis(5);
+    private final int MAX_CACHE_SIZE = 100;
     
     public DatabaseManager(BlockMint plugin) {
         this.plugin = plugin;
@@ -41,22 +50,23 @@ public class DatabaseManager {
         String dbType = config.getString("database.type", "sqlite");
         
         if (dbType.equalsIgnoreCase("mysql")) {
-            initializeMySQL();
+            initializeMySQLPool();
         } else {
             if (!plugin.getDependencyManager().ensureSQLiteDriverLoaded()) {
                 plugin.getLogger().severe("Failed to load SQLite driver! Database functionality will not work.");
                 return;
             }
-            initializeSQLite();
+            initializeSQLitePool();
         }
         
         setupTables();
         verifyTableStructure();
         
         startBatchProcessor();
+        startCacheCleanupTask();
     }
     
-    private void initializeSQLite() {
+    private void initializeSQLitePool() {
         String fileName = plugin.getConfigManager().getConfig().getString("database.file", "blockmint.db");
         File dataFolder = plugin.getDataFolder();
         
@@ -67,15 +77,40 @@ public class DatabaseManager {
         String jdbcUrl = "jdbc:sqlite:" + dataFolder + File.separator + fileName;
         
         try {
-            connection = DriverManager.getConnection(jdbcUrl);
+            HikariConfig config = new HikariConfig();
+            config.setJdbcUrl(jdbcUrl);
+            config.setMaximumPoolSize(10);
+            config.setMinimumIdle(3);
+            config.setPoolName("BlockMint-SQLite");
+            config.addDataSourceProperty("cachePrepStmts", "true");
+            config.addDataSourceProperty("prepStmtCacheSize", "250");
+            config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+            config.setConnectionTimeout(30000);
+            config.setIdleTimeout(60000);
+            config.setMaxLifetime(1800000);
+            
+            connectionPool = new HikariDataSource(config);
+            connection = connectionPool.getConnection();
             connection.setAutoCommit(true);
-            plugin.getLogger().info("Successfully connected to SQLite database!");
+            plugin.getLogger().info("Successfully initialized SQLite connection pool!");
         } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to initialize SQLite database!", e);
+            plugin.getLogger().log(Level.SEVERE, "Failed to initialize SQLite connection pool!", e);
+            fallbackToDirectConnection(jdbcUrl);
         }
     }
     
-    private void initializeMySQL() {
+    private void fallbackToDirectConnection(String jdbcUrl) {
+        try {
+            plugin.getLogger().warning("Falling back to direct database connection...");
+            connection = DriverManager.getConnection(jdbcUrl);
+            connection.setAutoCommit(true);
+            plugin.getLogger().info("Successfully connected to database using direct connection!");
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to initialize direct database connection!", e);
+        }
+    }
+    
+    private void initializeMySQLPool() {
         FileConfiguration config = plugin.getConfigManager().getConfig();
         String host = config.getString("database.mysql.host", "localhost");
         int port = config.getInt("database.mysql.port", 3306);
@@ -88,15 +123,39 @@ public class DatabaseManager {
         
         try {
             Class.forName("com.mysql.jdbc.Driver");
-            connection = DriverManager.getConnection(jdbcUrl, username, password);
-            plugin.getLogger().info("Successfully connected to MySQL database!");
+            
+            HikariConfig hikariConfig = new HikariConfig();
+            hikariConfig.setJdbcUrl(jdbcUrl);
+            hikariConfig.setUsername(username);
+            hikariConfig.setPassword(password);
+            hikariConfig.setMaximumPoolSize(20);
+            hikariConfig.setMinimumIdle(5);
+            hikariConfig.setPoolName("BlockMint-MySQL");
+            hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
+            hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
+            hikariConfig.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+            hikariConfig.addDataSourceProperty("useServerPrepStmts", "true");
+            hikariConfig.addDataSourceProperty("useLocalSessionState", "true");
+            hikariConfig.addDataSourceProperty("rewriteBatchedStatements", "true");
+            hikariConfig.addDataSourceProperty("cacheResultSetMetadata", "true");
+            hikariConfig.addDataSourceProperty("cacheServerConfiguration", "true");
+            hikariConfig.addDataSourceProperty("elideSetAutoCommits", "true");
+            hikariConfig.addDataSourceProperty("maintainTimeStats", "false");
+            hikariConfig.setConnectionTimeout(30000);
+            hikariConfig.setIdleTimeout(600000);
+            hikariConfig.setMaxLifetime(1800000);
+            
+            connectionPool = new HikariDataSource(hikariConfig);
+            connection = connectionPool.getConnection();
+            plugin.getLogger().info("Successfully initialized MySQL connection pool!");
         } catch (ClassNotFoundException | SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to initialize MySQL database!", e);
+            plugin.getLogger().log(Level.SEVERE, "Failed to initialize MySQL connection pool!", e);
+            fallbackToDirectConnection(jdbcUrl);
         }
     }
     
     private void setupTables() {
-        try (Statement statement = connection.createStatement()) {
+        try (Statement statement = getConnection().createStatement()) {
             statement.execute("CREATE TABLE IF NOT EXISTS generators (" +
                     "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                     "owner TEXT NOT NULL, " +
@@ -116,7 +175,11 @@ public class DatabaseManager {
                     "total_earnings REAL DEFAULT 0.0" +
                     ")");
             
-            plugin.getLogger().info("Database tables initialized successfully.");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_owner ON generators(owner)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_type ON generators(type)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_world ON generators(world)");
+            
+            plugin.getLogger().info("Database tables and indexes initialized successfully.");
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Error setting up database tables!", e);
         }
@@ -129,7 +192,7 @@ public class DatabaseManager {
             boolean hasGeneratorsOwnedColumn = false;
             boolean hasPlayerNameColumn = false;
             
-            ResultSet playerStatsColumns = connection.getMetaData().getColumns(null, null, "player_stats", null);
+            ResultSet playerStatsColumns = getConnection().getMetaData().getColumns(null, null, "player_stats", null);
             while (playerStatsColumns.next()) {
                 String columnName = playerStatsColumns.getString("COLUMN_NAME");
                 if ("generators_placed".equals(columnName)) {
@@ -145,7 +208,7 @@ public class DatabaseManager {
             
             if (hasGeneratorsPlacedColumn && !hasGeneratorsOwnedColumn) {
                 plugin.getLogger().info("Migrating player_stats table from generators_placed to generators_owned...");
-                try (Statement stmt = connection.createStatement()) {
+                try (Statement stmt = getConnection().createStatement()) {
                     stmt.execute("ALTER TABLE player_stats RENAME COLUMN generators_placed TO generators_owned");
                 }
                 plugin.getLogger().info("Migration complete.");
@@ -153,7 +216,7 @@ public class DatabaseManager {
             
             if (!hasPlayerNameColumn) {
                 plugin.getLogger().info("Adding player_name column to player_stats table...");
-                try (Statement stmt = connection.createStatement()) {
+                try (Statement stmt = getConnection().createStatement()) {
                     stmt.execute("ALTER TABLE player_stats ADD COLUMN player_name TEXT DEFAULT 'Unknown'");
                 }
                 plugin.getLogger().info("Column added successfully.");
@@ -166,6 +229,10 @@ public class DatabaseManager {
     }
     
     public PreparedStatement prepareStatement(String sql) throws SQLException {
+        if (connectionPool != null) {
+            return getConnection().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+        }
+        
         if (connection == null || connection.isClosed()) {
             plugin.getLogger().warning("Database connection lost, reconnecting...");
             initialize();
@@ -176,6 +243,21 @@ public class DatabaseManager {
         }
         
         return connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+    }
+    
+    public PreparedStatement getCachedPreparedStatement(String sql) throws SQLException {
+        if (statementCache.containsKey(sql)) {
+            PreparedStatement stmt = statementCache.get(sql);
+            if (!stmt.isClosed()) {
+                return stmt;
+            } else {
+                statementCache.remove(sql);
+            }
+        }
+        
+        PreparedStatement stmt = prepareStatement(sql);
+        statementCache.put(sql, stmt);
+        return stmt;
     }
     
     public ResultSet executeQuery(String sql) throws SQLException {
@@ -190,11 +272,24 @@ public class DatabaseManager {
         }
     }
     
-    public Connection getConnection() {
+    public Connection getConnection() throws SQLException {
+        if (connectionPool != null) {
+            if (connection == null || connection.isClosed()) {
+                connection = connectionPool.getConnection();
+            }
+            return connection;
+        }
+        
+        if (connection == null || connection.isClosed()) {
+            throw new SQLException("Database connection is not available!");
+        }
+        
         return connection;
     }
     
     public void close() {
+        clearStatementCache();
+        
         if (connection != null) {
             try {
                 connection.close();
@@ -203,6 +298,11 @@ public class DatabaseManager {
                 plugin.getLogger().log(Level.SEVERE, "Error closing database connection!", e);
             }
         }
+        
+        if (connectionPool != null && !connectionPool.isClosed()) {
+            connectionPool.close();
+            plugin.getLogger().info("Connection pool closed successfully.");
+        }
     }
     
     public void executeAsync(String sql, Consumer<ResultSet> resultHandler) {
@@ -210,6 +310,17 @@ public class DatabaseManager {
     }
     
     public void executeAsync(String sql, Consumer<ResultSet> resultHandler, Consumer<SQLException> errorHandler) {
+        String cacheKey = "query:" + sql;
+        CachedQueryResult<ResultSet> cachedResult = (CachedQueryResult<ResultSet>) queryResultCache.get(cacheKey);
+        if (cachedResult != null && !cachedResult.isExpired()) {
+            if (resultHandler != null) {
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    resultHandler.accept(cachedResult.getValue());
+                });
+            }
+            return;
+        }
+        
         pendingQueries.incrementAndGet();
         UUID taskId = UUID.randomUUID();
         
@@ -221,6 +332,11 @@ public class DatabaseManager {
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
                         try {
                             resultHandler.accept(resultSet);
+                            
+                            if (isCacheableQuery(sql)) {
+                                CachedQueryResult<ResultSet> newCache = new CachedQueryResult<>(resultSet, DEFAULT_CACHE_EXPIRY);
+                                addToCache(cacheKey, newCache);
+                            }
                         } catch (Exception e) {
                             plugin.getLogger().log(Level.SEVERE, "Error in query result handler", e);
                         } finally {
@@ -258,6 +374,8 @@ public class DatabaseManager {
                 if (resultHandler != null) {
                     plugin.getServer().getScheduler().runTask(plugin, () -> resultHandler.accept(result));
                 }
+                
+                invalidateCacheForUpdate(sql);
             } catch (SQLException e) {
                 if (errorHandler != null) {
                     plugin.getServer().getScheduler().runTask(plugin, () -> errorHandler.accept(e));
@@ -303,6 +421,8 @@ public class DatabaseManager {
                 
                 int result = stmt.executeUpdate();
                 future.complete(result);
+                
+                invalidateCacheForUpdate(sql);
             } catch (SQLException e) {
                 future.completeExceptionally(e);
                 plugin.getLogger().log(Level.SEVERE, "Error executing async update with parameters", e);
@@ -317,7 +437,18 @@ public class DatabaseManager {
     }
     
     public <T> CompletableFuture<T> queryWithMapperAsync(String sql, ResultSetMapper<T> mapper) {
+        return queryWithMapperAsync(sql, mapper, DEFAULT_CACHE_EXPIRY);
+    }
+    
+    public <T> CompletableFuture<T> queryWithMapperAsync(String sql, ResultSetMapper<T> mapper, long cacheTimeMs) {
         CompletableFuture<T> future = new CompletableFuture<>();
+        String cacheKey = "mapper:" + sql;
+        
+        CachedQueryResult<T> cachedResult = (CachedQueryResult<T>) queryResultCache.get(cacheKey);
+        if (cachedResult != null && !cachedResult.isExpired()) {
+            future.complete(cachedResult.getValue());
+            return future;
+        }
         
         pendingQueries.incrementAndGet();
         UUID taskId = UUID.randomUUID();
@@ -328,6 +459,11 @@ public class DatabaseManager {
                 
                 T result = mapper.map(rs);
                 future.complete(result);
+                
+                if (isCacheableQuery(sql)) {
+                    CachedQueryResult<T> newCache = new CachedQueryResult<>(result, cacheTimeMs);
+                    addToCache(cacheKey, newCache);
+                }
             } catch (SQLException e) {
                 future.completeExceptionally(e);
                 plugin.getLogger().log(Level.SEVERE, "Error executing async query with mapper", e);
@@ -341,8 +477,67 @@ public class DatabaseManager {
         return future;
     }
     
+    public <T> T queryWithTransaction(SqlFunction<Connection, T> function) throws SQLException {
+        Connection conn = null;
+        boolean originalAutoCommit = true;
+        
+        try {
+            conn = getConnection();
+            originalAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            
+            T result = function.apply(conn);
+            
+            conn.commit();
+            return result;
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    plugin.getLogger().log(Level.SEVERE, "Error rolling back transaction", rollbackEx);
+                }
+            }
+            throw e;
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(originalAutoCommit);
+                } catch (SQLException resetEx) {
+                    plugin.getLogger().log(Level.WARNING, "Error resetting auto-commit", resetEx);
+                }
+            }
+        }
+    }
+    
+    public CompletableFuture<Void> executeTransactionAsync(SqlConsumer<Connection> consumer) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        
+        pendingQueries.incrementAndGet();
+        UUID taskId = UUID.randomUUID();
+        
+        BukkitTask task = plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                queryWithTransaction(conn -> {
+                    consumer.accept(conn);
+                    return null;
+                });
+                future.complete(null);
+            } catch (SQLException e) {
+                future.completeExceptionally(e);
+                plugin.getLogger().log(Level.SEVERE, "Error executing async transaction", e);
+            } finally {
+                pendingQueries.decrementAndGet();
+                activeTasks.remove(taskId);
+            }
+        });
+        
+        activeTasks.put(taskId, task);
+        return future;
+    }
+    
     public void addBatchOperation(String sql, Object[] params) {
-        UUID playerUUID = UUID.randomUUID(); // Generic batch for non-player operations
+        UUID playerUUID = UUID.randomUUID(); 
         addBatchOperation(playerUUID, sql, params);
     }
     
@@ -379,13 +574,11 @@ public class DatabaseManager {
         List<BatchOperation> operations = batchOperations.remove(playerUUID);
         if (operations == null || operations.isEmpty()) return;
         
-        // Group operations by SQL query
         Map<String, List<Object[]>> groupedOperations = new HashMap<>();
         for (BatchOperation op : operations) {
             groupedOperations.computeIfAbsent(op.sql, k -> new ArrayList<>()).add(op.params);
         }
         
-        // Execute each group as a batch
         for (Map.Entry<String, List<Object[]>> entry : groupedOperations.entrySet()) {
             String sql = entry.getKey();
             List<Object[]> paramSets = entry.getValue();
@@ -393,15 +586,29 @@ public class DatabaseManager {
             pendingQueries.incrementAndGet();
             
             plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-                try (PreparedStatement stmt = prepareStatement(sql)) {
-                    for (Object[] params : paramSets) {
-                        for (int i = 0; i < params.length; i++) {
-                            stmt.setObject(i + 1, params[i]);
-                        }
-                        stmt.addBatch();
-                    }
+                try {
+                    Connection conn = getConnection();
+                    boolean originalAutoCommit = conn.getAutoCommit();
+                    conn.setAutoCommit(false);
                     
-                    stmt.executeBatch();
+                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        for (Object[] params : paramSets) {
+                            for (int i = 0; i < params.length; i++) {
+                                stmt.setObject(i + 1, params[i]);
+                            }
+                            stmt.addBatch();
+                        }
+                        
+                        stmt.executeBatch();
+                        conn.commit();
+                        
+                        invalidateCacheForUpdate(sql);
+                    } catch (SQLException e) {
+                        conn.rollback();
+                        throw e;
+                    } finally {
+                        conn.setAutoCommit(originalAutoCommit);
+                    }
                 } catch (SQLException e) {
                     plugin.getLogger().log(Level.SEVERE, "Error executing batch operation", e);
                 } finally {
@@ -409,6 +616,100 @@ public class DatabaseManager {
                 }
             });
         }
+    }
+    
+    private boolean isCacheableQuery(String sql) {
+        String normalizedSql = sql.trim().toLowerCase();
+        return normalizedSql.startsWith("select") && !normalizedSql.contains("random()") && 
+               !normalizedSql.contains("now()") && !normalizedSql.contains("current_timestamp");
+    }
+    
+    private void invalidateCacheForUpdate(String sql) {
+        String normalizedSql = sql.trim().toLowerCase();
+        String tableName = extractTableName(normalizedSql);
+        if (tableName != null) {
+            List<String> keysToRemove = new ArrayList<>();
+            for (String key : queryResultCache.keySet()) {
+                if (key.contains(tableName)) {
+                    keysToRemove.add(key);
+                }
+            }
+            for (String key : keysToRemove) {
+                queryResultCache.remove(key);
+            }
+        }
+    }
+    
+    private String extractTableName(String sql) {
+        if (sql.contains("update ")) {
+            int updateIndex = sql.indexOf("update ") + 7;
+            int spaceIndex = sql.indexOf(' ', updateIndex);
+            if (spaceIndex > updateIndex) {
+                return sql.substring(updateIndex, spaceIndex).trim();
+            }
+        } else if (sql.contains("insert into ")) {
+            int insertIndex = sql.indexOf("insert into ") + 12;
+            int spaceIndex = sql.indexOf(' ', insertIndex);
+            if (spaceIndex > insertIndex) {
+                return sql.substring(insertIndex, spaceIndex).trim();
+            }
+        } else if (sql.contains("delete from ")) {
+            int deleteIndex = sql.indexOf("delete from ") + 12;
+            int spaceIndex = sql.indexOf(' ', deleteIndex);
+            if (spaceIndex > deleteIndex) {
+                return sql.substring(deleteIndex, spaceIndex).trim();
+            }
+        }
+        return null;
+    }
+    
+    private <T> void addToCache(String key, CachedQueryResult<T> result) {
+        if (queryResultCache.size() >= MAX_CACHE_SIZE) {
+            String oldestKey = null;
+            long oldestTime = Long.MAX_VALUE;
+            
+            for (Map.Entry<String, CachedQueryResult<?>> entry : queryResultCache.entrySet()) {
+                CachedQueryResult<?> value = entry.getValue();
+                if (value.getCreationTime() < oldestTime) {
+                    oldestTime = value.getCreationTime();
+                    oldestKey = entry.getKey();
+                }
+            }
+            
+            if (oldestKey != null) {
+                queryResultCache.remove(oldestKey);
+            }
+        }
+        
+        queryResultCache.put(key, result);
+    }
+    
+    private void startCacheCleanupTask() {
+        plugin.getServer().getScheduler().runTaskTimerAsynchronously(plugin, () -> {
+            List<String> keysToRemove = new ArrayList<>();
+            
+            for (Map.Entry<String, CachedQueryResult<?>> entry : queryResultCache.entrySet()) {
+                if (entry.getValue().isExpired()) {
+                    keysToRemove.add(entry.getKey());
+                }
+            }
+            
+            for (String key : keysToRemove) {
+                queryResultCache.remove(key);
+            }
+            
+        }, 20 * 60, 20 * 60); // Run every minute
+    }
+    
+    private void clearStatementCache() {
+        for (PreparedStatement stmt : statementCache.values()) {
+            try {
+                stmt.close();
+            } catch (SQLException e) {
+                plugin.getLogger().log(Level.WARNING, "Error closing prepared statement", e);
+            }
+        }
+        statementCache.clear();
     }
     
     public void waitForPendingOperations() {
@@ -432,6 +733,24 @@ public class DatabaseManager {
         activeTasks.clear();
     }
     
+    public void optimizeDatabase() {
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try (Statement stmt = getConnection().createStatement()) {
+                if (plugin.getConfigManager().getConfig().getString("database.type", "sqlite").equalsIgnoreCase("sqlite")) {
+                    stmt.execute("VACUUM");
+                    stmt.execute("ANALYZE");
+                    plugin.getLogger().info("SQLite database optimized");
+                } else {
+                    stmt.execute("OPTIMIZE TABLE generators, player_stats");
+                    stmt.execute("ANALYZE TABLE generators, player_stats");
+                    plugin.getLogger().info("MySQL tables optimized");
+                }
+            } catch (SQLException e) {
+                plugin.getLogger().log(Level.WARNING, "Failed to optimize database", e);
+            }
+        });
+    }
+    
     private static class BatchOperation {
         final String sql;
         final Object[] params;
@@ -442,6 +761,40 @@ public class DatabaseManager {
             this.params = params;
             this.timestamp = timestamp;
         }
+    }
+    
+    private static class CachedQueryResult<T> {
+        private final T value;
+        private final long expiryTime;
+        private final long creationTime;
+        
+        CachedQueryResult(T value, long cacheTimeMs) {
+            this.value = value;
+            this.creationTime = System.currentTimeMillis();
+            this.expiryTime = this.creationTime + cacheTimeMs;
+        }
+        
+        public T getValue() {
+            return value;
+        }
+        
+        public boolean isExpired() {
+            return System.currentTimeMillis() > expiryTime;
+        }
+        
+        public long getCreationTime() {
+            return creationTime;
+        }
+    }
+    
+    @FunctionalInterface
+    public interface SqlFunction<T, R> {
+        R apply(T t) throws SQLException;
+    }
+    
+    @FunctionalInterface
+    public interface SqlConsumer<T> {
+        void accept(T t) throws SQLException;
     }
     
     public interface ResultSetMapper<T> {
