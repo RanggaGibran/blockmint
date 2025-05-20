@@ -21,6 +21,7 @@ general:
   generator-collect-confirm: "<prefix> <yellow>Shift+Left click again within 3 seconds to collect this generator to inventory.</yellow>"
   generator-collected: "<prefix> <green>Generator added to your inventory!</green>"
   generator-collected-inventory-full: "<prefix> <yellow>Your inventory was full, the generator was dropped on the ground!</yellow>"
+  evolution-ready: "&aYour {type} Generator is ready to evolve! Use /blockmint evolve {id} to evolve it."
 
 # Command Messages
 commands:
@@ -43,6 +44,13 @@ commands:
   invalid-player: "<prefix> <red>Player not found.</red>"
   invalid-type: "<prefix> <red>Invalid generator type.</red>"
   list-item: "<yellow>{name}</yellow> - <white>Base Value: ${value}</white> <gray>({material})</gray>"
+  evolve:
+    invalid-arguments: "&cInvalid arguments! Usage: /blockmint evolve <generator_id>"
+    invalid-id: "&cInvalid generator ID!"
+    not-found: "&cGenerator not found! Make sure you're using the correct ID."
+    not-ready: "&cThis generator isn't ready to evolve yet!"
+    no-evolution-path: "&cThis generator has no evolution path!"
+    success: "&aYour {old_type} Generator has evolved into a {new_type} Generator!"
 
 # Generator Messages
 generator:

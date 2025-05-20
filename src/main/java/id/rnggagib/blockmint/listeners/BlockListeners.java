@@ -5,6 +5,12 @@ import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.generators.GeneratorType;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import id.rnggagib.blockmint.utils.GeneratorItemManager;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -243,12 +249,53 @@ public class BlockListeners implements Listener {
         
         generator.setLastGeneration(System.currentTimeMillis());
         
+        // Track generator usage for evolution
+        generator.incrementUsage(value);
+        updateGeneratorUsageAsync(generator.getId(), generator.getUsageCount(), generator.getResourcesGenerated());
+        
+        // Check if generator is ready for evolution
+        if (generator.isEvolutionReady()) {
+            notifyEvolutionReady(player, generator);
+        }
+        
         Map<String, String> placeholders = new HashMap<>();
         placeholders.put("amount", String.format("%.2f", value));
         plugin.getMessageManager().send(player, "general.collect-success", placeholders);
         
         updatePlayerEarningsAsync(player.getUniqueId(), value);
         DisplayManager.updateHologram(plugin, generator);
+    }
+    
+    private void updateGeneratorUsageAsync(final int generatorId, final int usageCount, final double resourcesGenerated) {
+        pendingAsyncOperations.incrementAndGet();
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
+                        "UPDATE generators SET usage_count = ?, resources_generated = ? WHERE id = ?"
+                );
+                stmt.setInt(1, usageCount);
+                stmt.setDouble(2, resourcesGenerated);
+                stmt.setInt(3, generatorId);
+                stmt.executeUpdate();
+            } catch (SQLException e) {
+                plugin.getLogger().severe("Could not update generator usage in database: " + e.getMessage());
+            } finally {
+                pendingAsyncOperations.decrementAndGet();
+            }
+        });
+    }
+    
+    private void notifyEvolutionReady(Player player, Generator generator) {
+        GeneratorType nextType = generator.getEvolutionTarget();
+        if (nextType == null) return;
+        
+        TextComponent message = Component.text("Your " + generator.getType().getName() + " Generator is ready to evolve into a " + 
+                nextType.getName() + " Generator! ", NamedTextColor.GREEN)
+                .append(Component.text("[Evolve Now]", NamedTextColor.GOLD, TextDecoration.BOLD)
+                        .clickEvent(ClickEvent.runCommand("/blockmint evolve " + generator.getId()))
+                        .hoverEvent(HoverEvent.showText(Component.text("Click to evolve your generator"))));
+        
+        plugin.getAdventure().player(player).sendMessage(message);
     }
     
     private void upgradeGenerator(Player player, Generator generator) {

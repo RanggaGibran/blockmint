@@ -24,24 +24,17 @@ public class CommandManager implements CommandExecutor, TabCompleter {
     }
     
     public void registerCommands() {
-        registerSubCommands();
+        subCommands.put("help", new HelpCommand(plugin));
+        subCommands.put("give", new GiveCommand(plugin));
+        subCommands.put("list", new ListCommand(plugin));
+        subCommands.put("stats", new StatsCommand(plugin));
+        subCommands.put("reload", new ReloadCommand(plugin));
+        subCommands.put("manage", new ManageCommand(plugin));
+        subCommands.put("network", new NetworkCommand(plugin));
+        subCommands.put("evolve", new EvolveCommand(plugin)); // Add the new command
         
         plugin.getCommand("blockmint").setExecutor(this);
         plugin.getCommand("blockmint").setTabCompleter(this);
-    }
-    
-    private void registerSubCommands() {
-        registerSubCommand(new HelpCommand(plugin));
-        registerSubCommand(new ReloadCommand(plugin));
-        registerSubCommand(new GiveCommand(plugin));
-        registerSubCommand(new ListCommand(plugin));
-        registerSubCommand(new StatsCommand(plugin));
-        registerSubCommand(new ManageCommand(plugin));
-        registerSubCommand(new NetworkCommand(plugin));
-    }
-    
-    private void registerSubCommand(SubCommand subCommand) {
-        subCommands.put(subCommand.getName().toLowerCase(), subCommand);
     }
     
     @Override

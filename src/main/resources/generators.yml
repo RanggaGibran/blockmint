@@ -13,37 +13,52 @@ types:
     texture-value: ""
   
   iron:
-    name: "Iron"
-    material: "IRON_BLOCK"
+    name: Iron
+    material: IRON_BLOCK
     base-value: 10.0
-    generation-time: 180
-    value-multiplier: 1.6
+    generation-time: 300
+    value-multiplier: 1.5
     max-level: 10
     upgrade-cost-base: 100.0
-    upgrade-cost-multiplier: 1.9
+    upgrade-cost-multiplier: 1.8
     texture-value: ""
+    evolution:
+      path: gold
+      required-usage: 50
+      required-resources: 1000.0
+      evolution-cost: 500.0
     
   gold:
-    name: "Gold"
-    material: "GOLD_BLOCK"
-    base-value: 20.0
-    generation-time: 300
-    value-multiplier: 1.7
-    max-level: 10
-    upgrade-cost-base: 200.0
-    upgrade-cost-multiplier: 2.0
+    name: Gold
+    material: GOLD_BLOCK
+    base-value: 25.0
+    generation-time: 400
+    value-multiplier: 1.6
+    max-level: 12
+    upgrade-cost-base: 250.0
+    upgrade-cost-multiplier: 1.9
     texture-value: ""
+    evolution:
+      path: diamond
+      required-usage: 75
+      required-resources: 3000.0
+      evolution-cost: 1500.0
     
   diamond:
-    name: "Diamond"
-    material: "DIAMOND_BLOCK"
+    name: Diamond
+    material: DIAMOND_BLOCK
     base-value: 50.0
-    generation-time: 600
-    value-multiplier: 1.8
-    max-level: 10
+    generation-time: 500
+    value-multiplier: 1.7
+    max-level: 15
     upgrade-cost-base: 500.0
-    upgrade-cost-multiplier: 2.1
+    upgrade-cost-multiplier: 2.0
     texture-value: ""
+    evolution:
+      path: emerald
+      required-usage: 100
+      required-resources: 10000.0
+      evolution-cost: 5000.0
     
   emerald:
     name: "Emerald"

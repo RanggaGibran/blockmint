@@ -13,9 +13,15 @@ public class Generator {
     private final int id;
     private final UUID owner;
     private final Location location;
-    private final GeneratorType type;
+    private GeneratorType type;
     private int level;
     private long lastGeneration;
+    
+    // Evolution tracking fields
+    private int usageCount;
+    private double resourcesGenerated;
+    private long lastEvolutionCheck;
+    private boolean evolutionReady;
     
     public Generator(int id, UUID owner, Location location, GeneratorType type, int level) {
         this.id = id;
@@ -24,6 +30,18 @@ public class Generator {
         this.type = type;
         this.level = level;
         this.lastGeneration = System.currentTimeMillis();
+        this.usageCount = 0;
+        this.resourcesGenerated = 0;
+        this.lastEvolutionCheck = System.currentTimeMillis();
+        this.evolutionReady = false;
+    }
+    
+    public Generator(int id, UUID owner, Location location, GeneratorType type, int level, 
+                     int usageCount, double resourcesGenerated) {
+        this(id, owner, location, type, level);
+        this.usageCount = usageCount;
+        this.resourcesGenerated = resourcesGenerated;
+        checkEvolutionEligibility();
     }
     
     public int getId() {
@@ -42,6 +60,10 @@ public class Generator {
         return type;
     }
     
+    public void setType(GeneratorType type) {
+        this.type = type;
+    }
+    
     public int getLevel() {
         return level;
     }
@@ -56,6 +78,53 @@ public class Generator {
     
     public void setLastGeneration(long lastGeneration) {
         this.lastGeneration = lastGeneration;
+    }
+    
+    public int getUsageCount() {
+        return usageCount;
+    }
+    
+    public void incrementUsage(double amount) {
+        this.usageCount++;
+        this.resourcesGenerated += amount;
+        checkEvolutionEligibility();
+    }
+    
+    public double getResourcesGenerated() {
+        return resourcesGenerated;
+    }
+    
+    public boolean isEvolutionReady() {
+        return evolutionReady;
+    }
+    
+    public GeneratorType getEvolutionTarget() {
+        if (!type.hasEvolution()) {
+            return null;
+        }
+        String targetId = type.getEvolutionPath();
+        return BlockMint.getInstance().getGeneratorManager().getGeneratorTypes().get(targetId);
+    }
+    
+    private void checkEvolutionEligibility() {
+        // Only check every 5 uses to avoid constant checks
+        if (usageCount % 5 != 0) {
+            return;
+        }
+
+        // No evolution path defined
+        if (!type.hasEvolution()) {
+            evolutionReady = false;
+            return;
+        }
+
+        // Check if requirements are met
+        if (usageCount >= type.getEvolutionRequiredUsage() && 
+            resourcesGenerated >= type.getEvolutionRequiredResources()) {
+            evolutionReady = true;
+        }
+        
+        lastEvolutionCheck = System.currentTimeMillis();
     }
     
     public boolean canGenerate() {
@@ -145,5 +214,17 @@ public class Generator {
         long elapsed = System.currentTimeMillis() - lastGeneration;
         long total = getAdjustedGenerationTime() * 1000;
         return (int) ((elapsed * 100) / total);
+    }
+    
+    public int getEvolutionProgressPercent() {
+        if (!type.hasEvolution()) {
+            return 0;
+        }
+        
+        int usageProgress = Math.min(100, (usageCount * 100) / type.getEvolutionRequiredUsage());
+        int resourceProgress = Math.min(100, (int)((resourcesGenerated * 100) / type.getEvolutionRequiredResources()));
+        
+        // Return the minimum of the two percentages (both requirements must be met)
+        return Math.min(usageProgress, resourceProgress);
     }
 }

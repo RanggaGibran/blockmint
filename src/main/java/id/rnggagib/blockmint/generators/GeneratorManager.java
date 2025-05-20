@@ -65,6 +65,22 @@ public class GeneratorManager {
             double upgradeCostMultiplier = typeSection.getDouble("upgrade-cost-multiplier", 1.8);
             String textureValue = typeSection.getString("texture-value", "");
             
+            // Load evolution path information
+            String evolutionPath = "";
+            int evolutionRequiredUsage = 0;
+            double evolutionRequiredResources = 0;
+            double evolutionCost = 0;
+            
+            if (typeSection.contains("evolution")) {
+                ConfigurationSection evolutionSection = typeSection.getConfigurationSection("evolution");
+                if (evolutionSection != null) {
+                    evolutionPath = evolutionSection.getString("path", "");
+                    evolutionRequiredUsage = evolutionSection.getInt("required-usage", 100);
+                    evolutionRequiredResources = evolutionSection.getDouble("required-resources", 1000.0);
+                    evolutionCost = evolutionSection.getDouble("evolution-cost", 500.0);
+                }
+            }
+            
             GeneratorType type = new GeneratorType(
                     key, 
                     name, 
@@ -75,7 +91,11 @@ public class GeneratorManager {
                     maxLevel, 
                     upgradeCostBase, 
                     upgradeCostMultiplier,
-                    textureValue
+                    textureValue,
+                    evolutionPath,
+                    evolutionRequiredUsage,
+                    evolutionRequiredResources,
+                    evolutionCost
             );
             
             generatorTypes.put(key, type);
@@ -112,6 +132,16 @@ public class GeneratorManager {
                 int level = rs.getInt("level");
                 long lastGeneration = rs.getLong("last_generation");
                 
+                // Load evolution data (defaults to 0 if columns don't exist)
+                int usageCount = 0;
+                double resourcesGenerated = 0.0;
+                try {
+                    usageCount = rs.getInt("usage_count");
+                    resourcesGenerated = rs.getDouble("resources_generated");
+                } catch (SQLException e) {
+                    // Columns might not exist yet, that's fine
+                }
+                
                 if (!generatorTypes.containsKey(type)) {
                     plugin.getLogger().warning("Unknown generator type: " + type + " for generator " + id + ", skipping");
                     continue;
@@ -127,7 +157,7 @@ public class GeneratorManager {
                 try {
                     Location location = new Location(plugin.getServer().getWorld(world), x, y, z);
                     
-                    Generator generator = new Generator(id, owner, location, generatorType, level);
+                    Generator generator = new Generator(id, owner, location, generatorType, level, usageCount, resourcesGenerated);
                     generator.setLastGeneration(lastGeneration);
                     
                     activeGenerators.put(location, generator);

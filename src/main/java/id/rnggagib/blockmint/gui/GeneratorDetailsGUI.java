@@ -2,11 +2,14 @@ package id.rnggagib.blockmint.gui;
 
 import id.rnggagib.BlockMint;
 import id.rnggagib.blockmint.generators.Generator;
+import id.rnggagib.blockmint.generators.GeneratorType;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.ItemStack;
@@ -32,7 +35,7 @@ public class GeneratorDetailsGUI extends BaseGUI {
     
     @Override
     public void open() {
-        inventory = Bukkit.createInventory(player, 27, ChatColor.GOLD + generator.getType().getName() + " Generator");
+        inventory = Bukkit.createInventory(player, 36, ChatColor.GOLD + generator.getType().getName() + " Generator");
         
         inventory.setItem(4, GUIManager.createGeneratorIcon(generator, generator.canGenerate()));
         
@@ -71,13 +74,39 @@ public class GeneratorDetailsGUI extends BaseGUI {
         teleportLore.add("&7Teleport to this generator");
         inventory.setItem(15, GUIManager.createItem(Material.ENDER_PEARL, "&bTeleport", teleportLore));
         
+        if (generator.getType().hasEvolution()) {
+            GeneratorType nextType = generator.getEvolutionTarget();
+            if (nextType != null) {
+                List<String> evolutionLore = new ArrayList<>();
+                int progress = generator.getEvolutionProgressPercent();
+                
+                evolutionLore.add("&7Evolution Progress: &e" + progress + "%");
+                evolutionLore.add("&7Next Tier: &e" + nextType.getName());
+                evolutionLore.add("&7Usage: &e" + generator.getUsageCount() + "/" + generator.getType().getEvolutionRequiredUsage());
+                evolutionLore.add("&7Resources: &e" + String.format("%.2f", generator.getResourcesGenerated()) + 
+                                  "/" + String.format("%.2f", generator.getType().getEvolutionRequiredResources()));
+                
+                if (generator.getType().getEvolutionCost() > 0) {
+                    evolutionLore.add("&7Evolution Cost: &e$" + String.format("%.2f", generator.getType().getEvolutionCost()));
+                }
+                
+                if (generator.isEvolutionReady()) {
+                    evolutionLore.add("");
+                    evolutionLore.add("&aClick to evolve!");
+                    inventory.setItem(31, GUIManager.createItem(Material.NETHER_STAR, "&dEvolve Generator", evolutionLore));
+                } else {
+                    inventory.setItem(31, GUIManager.createItem(Material.END_CRYSTAL, "&dEvolution Progress", evolutionLore));
+                }
+            }
+        }
+        
         List<String> pickupLore = new ArrayList<>();
         pickupLore.add("&7Take generator to inventory");
         inventory.setItem(22, GUIManager.createItem(Material.CHEST_MINECART, "&eCollect Generator", pickupLore));
         
-        inventory.setItem(18, GUIManager.createItem(Material.ARROW, "&aBack to List", null));
+        inventory.setItem(27, GUIManager.createItem(Material.ARROW, "&aBack to List", null));
         
-        for (int i = 0; i < 27; i++) {
+        for (int i = 0; i < 36; i++) {
             if (inventory.getItem(i) == null) {
                 inventory.setItem(i, GUIManager.createItem(Material.BLACK_STAINED_GLASS_PANE, " ", null));
             }
@@ -89,7 +118,7 @@ public class GeneratorDetailsGUI extends BaseGUI {
         locationLore.add("&7X: &e" + loc.getBlockX());
         locationLore.add("&7Y: &e" + loc.getBlockY());
         locationLore.add("&7Z: &e" + loc.getBlockZ());
-        inventory.setItem(26, GUIManager.createItem(Material.COMPASS, "&6Location", locationLore));
+        inventory.setItem(35, GUIManager.createItem(Material.COMPASS, "&6Location", locationLore));
         
         player.openInventory(inventory);
     }
@@ -117,17 +146,21 @@ public class GeneratorDetailsGUI extends BaseGUI {
             case 15:
                 teleportToGenerator();
                 break;
-            case 18:
-                openListGUI();
-                break;
             case 22:
                 pickupGenerator();
+                break;
+            case 27:
+                openListGUI();
+                break;
+            case 31:
+                if (generator.isEvolutionReady()) {
+                    evolveGenerator();
+                }
                 break;
         }
     }
     
     private void refreshGUI() {
-        // Re-open the GUI to refresh it
         open();
     }
     
@@ -241,6 +274,85 @@ public class GeneratorDetailsGUI extends BaseGUI {
             stmt.executeUpdate();
         } catch (SQLException e) {
             plugin.getLogger().severe("Could not update player earnings in database: " + e.getMessage());
+        }
+    }
+    
+    private void evolveGenerator() {
+        GeneratorType nextType = generator.getEvolutionTarget();
+        if (nextType == null) {
+            player.sendMessage(ChatColor.RED + "This generator has no evolution path!");
+            return;
+        }
+
+        double evolutionCost = generator.getType().getEvolutionCost();
+        if (evolutionCost > 0 && plugin.getConfigManager().getConfig().getBoolean("economy.charge-for-evolution", true)) {
+            if (!plugin.getEconomy().has(player, evolutionCost)) {
+                player.sendMessage(ChatColor.RED + "You need $" + evolutionCost + " to evolve this generator!");
+                return;
+            }
+            
+            plugin.getEconomy().withdrawPlayer(player, evolutionCost);
+        }
+        
+        String oldTypeName = generator.getType().getName();
+        generator.setType(nextType);
+        
+        try {
+            PreparedStatement stmt = plugin.getDatabaseManager().prepareStatement(
+                    "UPDATE generators SET type = ?, usage_count = 0, resources_generated = 0 WHERE id = ?"
+            );
+            stmt.setString(1, nextType.getId());
+            stmt.setInt(2, generator.getId());
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not update generator type in database: " + e.getMessage());
+            return;
+        }
+        
+        Location location = generator.getLocation();
+        if (location.getChunk().isLoaded()) {
+            location.getBlock().setType(Material.valueOf(nextType.getMaterial()));
+        }
+        
+        playEvolutionEffects(location);
+        
+        DisplayManager.removeHologram(location);
+        DisplayManager.createHologram(plugin, location, nextType, generator.getLevel());
+        
+        player.sendMessage(ChatColor.GREEN + "Your " + oldTypeName + " Generator evolved into a " + 
+                nextType.getName() + " Generator!");
+        
+        player.closeInventory();
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            GeneratorDetailsGUI newGUI = new GeneratorDetailsGUI(plugin, player, generator, listPage);
+            newGUI.open();
+            plugin.getGUIManager().registerActiveGUI(player.getUniqueId().toString(), newGUI);
+        }, 5L);
+    }
+    
+    private void playEvolutionEffects(Location location) {
+        Location effectLoc = location.clone().add(0.5, 1.2, 0.5);
+        
+        for (int i = 0; i < 5; i++) {
+            final int index = i;
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                effectLoc.getWorld().spawnParticle(
+                    Particle.SPELL_WITCH, effectLoc, 20, 0.5, 0.5, 0.5, 0
+                );
+                
+                if (index == 0) {
+                    effectLoc.getWorld().playSound(effectLoc, Sound.BLOCK_BEACON_ACTIVATE, 1.0f, 1.0f);
+                } else if (index == 4) {
+                    effectLoc.getWorld().spawnParticle(Particle.EXPLOSION_LARGE, effectLoc, 1);
+                    effectLoc.getWorld().playSound(effectLoc, Sound.ENTITY_GENERIC_EXPLODE, 0.8f, 1.2f);
+                    
+                    for (int j = 0; j < 50; j++) {
+                        effectLoc.getWorld().spawnParticle(
+                            Particle.END_ROD, effectLoc, 1, 0.8, 0.8, 0.8, 0.1
+                        );
+                    }
+                }
+            }, i * 5L);
         }
     }
 }

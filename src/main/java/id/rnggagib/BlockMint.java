@@ -30,6 +30,7 @@ import org.bukkit.World;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,10 +54,14 @@ public class BlockMint extends JavaPlugin {
     private DependencyManager dependencyManager;
     private EconomyManager economyManager;
     private boolean isFullyEnabled = false;
+    private BukkitAudiences adventure;
     
     @Override
     public void onEnable() {
         instance = this;
+        
+        // Initialize Adventure early in your plugin startup
+        this.adventure = BukkitAudiences.create(this);
         
         if (!setupEconomy()) {
             getLogger().severe("Vault not found or no economy plugin installed! Disabling BlockMint...");
@@ -318,6 +323,12 @@ public class BlockMint extends JavaPlugin {
     public void onDisable() {
         isFullyEnabled = false;
         
+        // Close the audience to free resources
+        if (this.adventure != null) {
+            this.adventure.close();
+            this.adventure = null;
+        }
+        
         stopTasks();
         
         getLogger().info("Removing all generator holograms...");
@@ -445,6 +456,10 @@ public class BlockMint extends JavaPlugin {
     
     public EconomyManager getEconomyManager() {
         return economyManager;
+    }
+    
+    public BukkitAudiences getAdventure() {
+        return this.adventure;
     }
     
     public static class ChunkLocation {

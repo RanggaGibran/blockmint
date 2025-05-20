@@ -168,6 +168,7 @@ public class DisplayManager {
         generatorLines.add("Level {level}/{maxLevel}");
         generatorLines.add("Value: {value}");
         generatorLines.add("Owner: {owner}");
+        generatorLines.add("{evolution_status}");
         
         Function<Location, List<String>> generatorTextProvider = (location) -> {
             Generator generator = plugin.getGeneratorManager().getGenerator(location);
@@ -191,6 +192,19 @@ public class DisplayManager {
             String ownerName = plugin.getServer().getOfflinePlayer(generator.getOwner()).getName();
             if (ownerName == null) ownerName = "Unknown";
             result.add("Owner: " + ownerName);
+            
+            // Add evolution progress if applicable
+            if (generator.getType().hasEvolution()) {
+                int progress = generator.getEvolutionProgressPercent();
+                if (progress < 100) {
+                    GeneratorType nextType = generator.getEvolutionTarget();
+                    if (nextType != null) {
+                        result.add("§dEvolution: " + progress + "% → " + nextType.getName());
+                    }
+                } else {
+                    result.add("§aReady to evolve!");
+                }
+            }
             
             return result;
         };

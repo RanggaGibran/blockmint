@@ -165,8 +165,22 @@ public class DatabaseManager {
                     "z DOUBLE NOT NULL, " +
                     "type TEXT NOT NULL, " +
                     "level INTEGER DEFAULT 1, " +
-                    "last_generation BIGINT DEFAULT 0" +
+                    "last_generation BIGINT DEFAULT 0, " +
+                    "usage_count INTEGER DEFAULT 0, " +
+                    "resources_generated REAL DEFAULT 0.0" +
                     ")");
+            
+            // Check if evolution columns exist and add them if not
+            try {
+                ResultSet rs = getConnection().getMetaData().getColumns(null, null, "generators", "usage_count");
+                if (!rs.next()) {
+                    statement.execute("ALTER TABLE generators ADD COLUMN usage_count INTEGER DEFAULT 0");
+                    statement.execute("ALTER TABLE generators ADD COLUMN resources_generated REAL DEFAULT 0.0");
+                    plugin.getLogger().info("Added evolution tracking columns to generators table");
+                }
+            } catch (SQLException e) {
+                plugin.getLogger().warning("Could not check for evolution columns: " + e.getMessage());
+            }
             
             statement.execute("CREATE TABLE IF NOT EXISTS player_stats (" +
                     "uuid TEXT PRIMARY KEY, " +
