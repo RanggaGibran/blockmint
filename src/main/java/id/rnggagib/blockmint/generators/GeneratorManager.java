@@ -13,6 +13,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -28,6 +29,10 @@ public class GeneratorManager {
     private int loadedGeneratorCount = 0;
     private int activeHologramCount = 0;
     private List<Generator> pendingGenerators = new ArrayList<>();
+    private final Map<Integer, Generator> generatorIdCache = new ConcurrentHashMap<>();
+    private final Map<UUID, List<Integer>> playerGeneratorCache = new ConcurrentHashMap<>();
+    private long lastCacheCleanup = System.currentTimeMillis();
+    private static final long CACHE_CLEANUP_INTERVAL = 300000; // 5 minutes
     
     public GeneratorManager(BlockMint plugin) {
         this.plugin = plugin;
@@ -437,5 +442,121 @@ public class GeneratorManager {
     
     public int getActiveHologramCount() {
         return activeHologramCount;
+    }
+    
+    public Generator findGeneratorById(int generatorId) {
+        // First check the ID cache
+        Generator cachedGenerator = generatorIdCache.get(generatorId);
+        if (cachedGenerator != null) {
+            return cachedGenerator;
+        }
+        
+        // If not in cache, look through active generators
+        for (Generator generator : activeGenerators.values()) {
+            if (generator.getId() == generatorId) {
+                // Add to cache for future lookups
+                generatorIdCache.put(generatorId, generator);
+                return generator;
+            }
+        }
+        
+        return null;
+    }
+    
+    public List<Generator> getPlayerGenerators(UUID playerUUID) {
+        List<Generator> playerGenerators = new ArrayList<>();
+        
+        // Check if we need to clean the cache
+        long now = System.currentTimeMillis();
+        if (now - lastCacheCleanup > CACHE_CLEANUP_INTERVAL) {
+            cleanupCaches();
+            lastCacheCleanup = now;
+        }
+        
+        // Check if the player generators are cached
+        List<Integer> cachedIds = playerGeneratorCache.get(playerUUID);
+        if (cachedIds != null) {
+            for (Integer id : cachedIds) {
+                Generator generator = findGeneratorById(id);
+                if (generator != null) {
+                    playerGenerators.add(generator);
+                }
+            }
+            return playerGenerators;
+        }
+        
+        // If not cached, build the list and cache it
+        List<Integer> generatorIds = new ArrayList<>();
+        for (Generator generator : activeGenerators.values()) {
+            if (generator.getOwner().equals(playerUUID)) {
+                playerGenerators.add(generator);
+                generatorIds.add(generator.getId());
+            }
+        }
+        
+        playerGeneratorCache.put(playerUUID, generatorIds);
+        return playerGenerators;
+    }
+    
+    private void cleanupCaches() {
+        // Remove any generators from cache that are no longer active
+        Iterator<Map.Entry<Integer, Generator>> idIterator = generatorIdCache.entrySet().iterator();
+        while (idIterator.hasNext()) {
+            Map.Entry<Integer, Generator> entry = idIterator.next();
+            if (!isGeneratorActive(entry.getValue())) {
+                idIterator.remove();
+            }
+        }
+        
+        // Clean up player generator cache
+        for (UUID playerUUID : playerGeneratorCache.keySet()) {
+            List<Integer> ids = playerGeneratorCache.get(playerUUID);
+            if (ids != null) {
+                boolean changed = false;
+                Iterator<Integer> iterator = ids.iterator();
+                while (iterator.hasNext()) {
+                    Integer id = iterator.next();
+                    if (generatorIdCache.get(id) == null || !isGeneratorActive(generatorIdCache.get(id))) {
+                        iterator.remove();
+                        changed = true;
+                    }
+                }
+                
+                if (changed) {
+                    if (ids.isEmpty()) {
+                        playerGeneratorCache.remove(playerUUID);
+                    } else {
+                        playerGeneratorCache.put(playerUUID, ids);
+                    }
+                }
+            }
+        }
+        
+        plugin.getLogger().fine("Generator cache cleanup complete");
+    }
+    
+    private boolean isGeneratorActive(Generator generator) {
+        return activeGenerators.containsValue(generator);
+    }
+    
+    public void invalidatePlayerCache(UUID playerUUID) {
+        playerGeneratorCache.remove(playerUUID);
+    }
+    
+    public void invalidateGeneratorCache(int generatorId) {
+        generatorIdCache.remove(generatorId);
+        
+        // Also update player caches
+        for (UUID playerUUID : playerGeneratorCache.keySet()) {
+            List<Integer> ids = playerGeneratorCache.get(playerUUID);
+            if (ids != null && ids.contains(generatorId)) {
+                ids.remove(Integer.valueOf(generatorId));
+                if (ids.isEmpty()) {
+                    playerGeneratorCache.remove(playerUUID);
+                } else {
+                    playerGeneratorCache.put(playerUUID, ids);
+                }
+            }
+        }
     }
 }

@@ -781,6 +781,24 @@ public class DatabaseManager {
         });
     }
     
+    private void setupOptimizedIndexes() {
+        try (Statement statement = getConnection().createStatement()) {
+            // Create indexes for the most frequently queried fields
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_location ON generators(world, x, y, z)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_network_generators_generator_id ON network_generators(generator_id)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_usage ON generators(usage_count, resources_generated)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_networks_owner ON networks(owner)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_networks_location ON networks(world, x, y, z)");
+            
+            // Optimize joins
+            statement.execute("ANALYZE");
+            
+            plugin.getLogger().info("Database indexes optimized for performance");
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Error setting up optimized database indexes!", e);
+        }
+    }
+    
     private static class BatchOperation {
         final String sql;
         final Object[] params;

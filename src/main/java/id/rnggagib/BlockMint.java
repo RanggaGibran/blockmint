@@ -20,9 +20,9 @@ import id.rnggagib.blockmint.network.NetworkManager;
 import id.rnggagib.blockmint.gui.NetworkGUIManager;
 import id.rnggagib.blockmint.utils.DependencyManager;
 import id.rnggagib.blockmint.network.NetworkBlock;
-import id.rnggagib.blockmint.network.NetworkTier;
 import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.economy.EconomyManager;
+import id.rnggagib.blockmint.chunk.ChunkManager;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -55,6 +55,7 @@ public class BlockMint extends JavaPlugin {
     private EconomyManager economyManager;
     private boolean isFullyEnabled = false;
     private BukkitAudiences adventure;
+    private ChunkManager chunkManager;
     
     @Override
     public void onEnable() {
@@ -87,6 +88,26 @@ public class BlockMint extends JavaPlugin {
                     executeDelayedStartup();
                 }, 40L);
             }, 20L);
+            
+            // Initialize ChunkManager before loading generators
+            chunkManager = new ChunkManager(this);
+            
+            // After loading generators, register them with the ChunkManager
+            getServer().getScheduler().runTaskLater(this, () -> {
+                for (Map.Entry<Location, Generator> entry : generatorManager.getActiveGenerators().entrySet()) {
+                    chunkManager.registerGenerator(entry.getKey());
+                }
+                
+                // Update the GeneratorTask with our optimized version
+                if (generatorTask != null) {
+                    generatorTask.cancel();
+                }
+                
+                generatorTask = new GeneratorTask(this);
+                generatorTask.runTaskTimer(this, 20L, 20L);
+                
+                getLogger().info("Performance optimizations initialized");
+            }, 40L); // Short delay to ensure everything is initialized
             
             getLogger().info("BlockMint has been enabled!");
         } catch (Exception e) {
@@ -460,6 +481,14 @@ public class BlockMint extends JavaPlugin {
     
     public BukkitAudiences getAdventure() {
         return this.adventure;
+    }
+    
+    public ChunkManager getChunkManager() {
+        return chunkManager;
+    }
+    
+    public BukkitRunnable getGeneratorTask() {
+        return generatorTask;
     }
     
     public static class ChunkLocation {
