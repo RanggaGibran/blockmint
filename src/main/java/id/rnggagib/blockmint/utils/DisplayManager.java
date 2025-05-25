@@ -774,6 +774,40 @@ public class DisplayManager {
         }
     }
     
+    public static void updateHologram(BlockMint plugin, NetworkBlock network) {
+        Location location = network.getLocation();
+        
+        if (!hasHologram(location) || holograms.get(location) == null || holograms.get(location).size() < 2) {
+            createNetworkHologram(location, network);
+            return;
+        }
+        
+        try {
+            List<Entity> entities = holograms.get(location);
+            if (entities.get(0) instanceof ArmorStand && entities.get(1) instanceof ArmorStand) {
+                ArmorStand titleStand = (ArmorStand) entities.get(0);
+                ArmorStand infoStand = (ArmorStand) entities.get(1);
+                
+                if (titleStand.isDead() || infoStand.isDead()) {
+                    createNetworkHologram(location, network);
+                    return;
+                }
+                
+                titleStand.setCustomName("§b§l" + network.getTier().getDisplayName() + " Network");
+                
+                String generatorInfo = "§7Generators: §f" + network.getConnectedGeneratorCount() + "/" + network.getMaxGenerators();
+                String autoCollectStatus = network.isAutoCollectEnabled() ? " §a[Auto-Collect ON]" : " §c[Auto-Collect OFF]";
+                
+                infoStand.setCustomName(generatorInfo + autoCollectStatus);
+            } else {
+                createNetworkHologram(location, network);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().log(Level.WARNING, "Error updating network hologram", e);
+            createNetworkHologram(location, network);
+        }
+    }
+    
     private static String formatTime(long seconds) {
         if (seconds < 0) seconds = 0;
         
