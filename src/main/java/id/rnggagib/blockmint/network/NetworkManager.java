@@ -632,18 +632,45 @@ public class NetworkManager {
                 
                 if (generator.canGenerate()) {
                     double value = generator.getValue() * network.getAutoCollectEfficiency();
-                    plugin.getEconomy().depositPlayer(owner, value);
-                    generator.setLastGeneration(System.currentTimeMillis());
-                    generator.incrementUsageCount();
-                    generator.addResourcesGenerated(value);
                     
-                    totalCollected += value;
-                    generatorsCollected++;
+                    // Fix: Add more robust economy handling
+                    boolean depositSuccess = false;
+                    try {
+                        depositSuccess = plugin.getEconomy().depositPlayer(owner, value).transactionSuccess();
+                        
+                        if (!depositSuccess) {
+                            plugin.getLogger().warning("Failed to deposit " + value + " to " + owner.getName() + 
+                                    " during network auto-collect. Economy transaction failed.");
+                            continue;
+                        }
+                    } catch (Exception e) {
+                        plugin.getLogger().severe("Error during economy transaction: " + e.getMessage());
+                        continue;
+                    }
                     
-                    Location genLocation = generator.getLocation();
-                    if (genLocation.getWorld() != null && genLocation.getWorld().isChunkLoaded(genLocation.getBlockX() >> 4, genLocation.getBlockZ() >> 4)) {
-                        spawnNetworkCollectionEffect(genLocation, network.getLocation());
-                        DisplayManager.updateHologram(plugin, generator);
+                    // Only proceed if deposit was successful
+                    if (depositSuccess) {
+                        generator.setLastGeneration(System.currentTimeMillis());
+                        generator.incrementUsageCount();
+                        generator.addResourcesGenerated(value);
+                        
+                        totalCollected += value;
+                        generatorsCollected++;
+                        
+                        // Visual effects
+                        Location genLocation = generator.getLocation();
+                        if (genLocation.getWorld() != null && genLocation.getWorld().isChunkLoaded(genLocation.getBlockX() >> 4, genLocation.getBlockZ() >> 4)) {
+                            spawnNetworkCollectionEffect(genLocation, network.getLocation());
+                            DisplayManager.updateHologram(plugin, generator);
+                        }
+                        
+                        // Add immediate feedback to the player
+                        if (generatorsCollected % 5 == 0) {
+                            owner.spigot().sendMessage(
+                                net.md_5.bungee.api.ChatMessageType.ACTION_BAR,
+                                new net.md_5.bungee.api.chat.TextComponent("§a+" + String.format("%.2f", value) + " from network auto-collect")
+                            );
+                        }
                     }
                 }
             }
