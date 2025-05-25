@@ -602,7 +602,7 @@ public class NetworkManager {
         
         for (NetworkBlock network : networks.values()) {
             Location location = network.getLocation();
-            DisplayManager.createNetworkHologram(location, network);
+            //DisplayManager.createNetworkHologram(location, network);
         }
     }
     
@@ -669,7 +669,7 @@ public class NetworkManager {
                 Location networkLocation = network.getLocation().clone().add(0.5, 1.0, 0.5);
                 world.playSound(networkLocation, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 0.8f);
                 
-                DisplayManager.updateHologram(plugin, network);
+                //DisplayManager.updateHologram(plugin, network);
             }
         }
     }
