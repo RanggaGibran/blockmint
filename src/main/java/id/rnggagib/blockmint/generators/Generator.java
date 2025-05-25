@@ -23,6 +23,8 @@ public class Generator {
     private long lastEvolutionCheck;
     private boolean evolutionReady;
     
+    private final BlockMint plugin;
+    
     public Generator(int id, UUID owner, Location location, GeneratorType type, int level) {
         this.id = id;
         this.owner = owner;
@@ -34,6 +36,7 @@ public class Generator {
         this.resourcesGenerated = 0;
         this.lastEvolutionCheck = System.currentTimeMillis();
         this.evolutionReady = false;
+        this.plugin = BlockMint.getInstance();
     }
     
     public Generator(int id, UUID owner, Location location, GeneratorType type, int level, 
@@ -88,6 +91,38 @@ public class Generator {
         this.usageCount++;
         this.resourcesGenerated += amount;
         checkEvolutionEligibility();
+    }
+    
+    public void incrementUsageCount() {
+        this.usageCount++;
+        
+        if (this.usageCount % 5 == 0) {
+            saveUsageCountToDatabase();
+        }
+    }
+
+    private void saveUsageCountToDatabase() {
+        plugin.getDatabaseManager().addBatchOperation(
+            owner,
+            "UPDATE generators SET usage_count = ? WHERE id = ?",
+            new Object[]{usageCount, id}
+        );
+    }
+
+    public void addResourcesGenerated(double amount) {
+        this.resourcesGenerated += amount;
+        
+        if (this.resourcesGenerated % 100 < amount) {
+            saveResourcesToDatabase();
+        }
+    }
+
+    private void saveResourcesToDatabase() {
+        plugin.getDatabaseManager().addBatchOperation(
+            owner,
+            "UPDATE generators SET resources_generated = ? WHERE id = ?",
+            new Object[]{resourcesGenerated, id}
+        );
     }
     
     public double getResourcesGenerated() {

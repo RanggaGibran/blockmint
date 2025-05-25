@@ -99,6 +99,11 @@ public class GeneratorTask extends BukkitRunnable {
         }
         
         processGeneratorBatch();
+        
+        // Process network auto-collection every 5 ticks (approximately 0.25s)
+        if (processingTick % 5 == 0) {
+            plugin.getNetworkManager().processNetworkAutoCollection();
+        }
     }
     
     private void processGeneratorBatch() {

@@ -403,7 +403,6 @@ public class DisplayManager {
     }
     
     public static void createNetworkHologram(Location location, NetworkBlock network) {
-        // Check if location already has a hologram for better restart handling
         if (hasHologram(location)) {
             removeHologram(location);
         }
@@ -422,8 +421,15 @@ public class DisplayManager {
         
         replacements.put("{count}", String.valueOf(network.getConnectedGeneratorCount()));
         replacements.put("{max}", String.valueOf(network.getMaxGenerators()));
+        replacements.put("{auto-collect}", network.isAutoCollectEnabled() ? "§aEnabled" : "§cDisabled");
         
         createTemplatedHologram(location, template, replacements);
+        
+        UUID hologramUUID = UUID.randomUUID();
+        hologramIds.put(location, hologramUUID);
+        
+        Material material = template.getDisplayMaterial();
+        scheduleAnchorTask(location, template.shouldRotateItem());
     }
     
     private static Map<String, String> createGeneratorReplacements(Location location, GeneratorType type, int level) {
@@ -941,6 +947,9 @@ public class DisplayManager {
     
     public static void restoreAllHolograms(BlockMint plugin) {
         plugin.getLogger().info("Restoring all holograms...");
+        
+        // First, ensure all old holograms are removed
+        removeAllHolograms();
         
         // Restore generator holograms
         int generatorCount = 0;

@@ -8,9 +8,13 @@ import id.rnggagib.blockmint.network.permissions.NetworkPermissionManager;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
+import org.bukkit.Sound;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Vector;
 
+import java.awt.Color;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -119,6 +123,7 @@ public class NetworkManager {
                 networks.put(networkId, network);
                 
                 loadNetworkGenerators(network);
+                loadNetworkAutoCollectSettings(network); // Load auto-collect settings
             }
             
             plugin.getLogger().info("Loaded " + networks.size() + " network blocks from " + count + " database records");
@@ -296,6 +301,10 @@ public class NetworkManager {
             int result = stmt.executeUpdate();
             
             if (result > 0) {
+                // First, remove hologram before modifying network data
+                Location location = network.getLocation();
+                DisplayManager.removeHologram(location);
+                
                 for (int generatorId : network.getConnectedGenerators()) {
                     generatorNetworkMap.remove(generatorId);
                     
@@ -306,7 +315,6 @@ public class NetworkManager {
                 }
                 
                 permissionManager.handleNetworkDeletion(networkId);
-                
                 networks.remove(networkId);
                 return true;
             }
@@ -604,5 +612,120 @@ public class NetworkManager {
     
     public NetworkPermissionManager getPermissionManager() {
         return permissionManager;
+    }
+
+    public void processNetworkAutoCollection() {
+        for (NetworkBlock network : networks.values()) {
+            if (!network.isAutoCollectEnabled()) continue;
+            
+            World world = network.getLocation().getWorld();
+            if (world == null || !world.isChunkLoaded(network.getLocation().getBlockX() >> 4, network.getLocation().getBlockZ() >> 4)) {
+                continue;
+            }
+            
+            UUID ownerUuid = network.getOwner();
+            Player owner = plugin.getServer().getPlayer(ownerUuid);
+            if (owner == null || !owner.isOnline()) continue;
+            
+            double totalCollected = 0;
+            int generatorsCollected = 0;
+            
+            for (Integer generatorId : network.getConnectedGenerators()) {
+                Generator generator = plugin.getGeneratorManager().findGeneratorById(generatorId);
+                if (generator == null) continue;
+                
+                if (generator.canGenerate()) {
+                    double value = generator.getValue() * network.getAutoCollectEfficiency();
+                    plugin.getEconomy().depositPlayer(owner, value);
+                    generator.setLastGeneration(System.currentTimeMillis());
+                    generator.incrementUsageCount();
+                    generator.addResourcesGenerated(value);
+                    
+                    totalCollected += value;
+                    generatorsCollected++;
+                    
+                    Location genLocation = generator.getLocation();
+                    if (genLocation.getWorld() != null && genLocation.getWorld().isChunkLoaded(genLocation.getBlockX() >> 4, genLocation.getBlockZ() >> 4)) {
+                        spawnNetworkCollectionEffect(genLocation, network.getLocation());
+                        DisplayManager.updateHologram(plugin, generator);
+                    }
+                }
+            }
+            
+            if (totalCollected > 0) {
+                network.setLastAutoCollectTime(System.currentTimeMillis());
+                
+                Map<String, String> placeholders = new HashMap<>();
+                placeholders.put("amount", String.format("%.2f", totalCollected));
+                placeholders.put("count", String.valueOf(generatorsCollected));
+                placeholders.put("network", network.getTier().getDisplayName());
+                
+                plugin.getMessageManager().send(owner, "network.auto-collect-success", placeholders);
+                
+                plugin.getDatabaseManager().addBatchOperation(
+                    ownerUuid,
+                    "UPDATE player_stats SET total_earnings = total_earnings + ? WHERE uuid = ?",
+                    new Object[]{totalCollected, ownerUuid.toString()}
+                );
+                
+                plugin.getEconomyManager().logTransaction(ownerUuid, totalCollected, "network_auto_collect");
+                
+                Location networkLocation = network.getLocation().clone().add(0.5, 1.0, 0.5);
+                world.playSound(networkLocation, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 0.8f);
+                
+                DisplayManager.updateHologram(plugin, network);
+            }
+        }
+    }
+
+    private void spawnNetworkCollectionEffect(Location generatorLocation, Location networkLocation) {
+        if (generatorLocation.getWorld() != networkLocation.getWorld()) return;
+        
+        org.bukkit.World world = generatorLocation.getWorld();
+        Location genCenter = generatorLocation.clone().add(0.5, 1.0, 0.5);
+        Location netCenter = networkLocation.clone().add(0.5, 1.0, 0.5);
+        
+        Vector direction = netCenter.toVector().subtract(genCenter.toVector()).normalize().multiply(0.3);
+        Location particleLoc = genCenter.clone();
+        
+        Particle.DustOptions dustOptions = new Particle.DustOptions(org.bukkit.Color.fromRGB(30, 144, 255), 0.7f);
+        
+        for (int i = 0; i < 10; i++) {
+            world.spawnParticle(Particle.REDSTONE, particleLoc, 1, 0, 0, 0, 0, dustOptions);
+            particleLoc.add(direction);
+        }
+    }
+
+    public void saveNetwork(NetworkBlock network) {
+        try (PreparedStatement stmt = plugin.getDatabaseManager().getConnection().prepareStatement(
+                "UPDATE networks SET owner = ?, tier = ?, auto_collect_enabled = ?, last_auto_collect_time = ? WHERE id = ?")) {
+            
+            stmt.setString(1, network.getOwner().toString());
+            stmt.setString(2, network.getTier().name());
+            stmt.setInt(3, network.isAutoCollectEnabled() ? 1 : 0);
+            stmt.setLong(4, network.getLastAutoCollectTime());
+            stmt.setInt(5, network.getNetworkId());
+            
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Error saving network data", e);
+        }
+    }
+
+    // Modify the loadNetworks method to load auto-collect settings
+    private void loadNetworkAutoCollectSettings(NetworkBlock network) {
+        try (PreparedStatement stmt = plugin.getDatabaseManager().getConnection().prepareStatement(
+                "SELECT auto_collect_enabled, last_auto_collect_time FROM networks WHERE id = ?")) {
+                
+            stmt.setInt(1, network.getNetworkId());
+            ResultSet rs = stmt.executeQuery();
+            
+            if (rs.next()) {
+                network.setAutoCollectEnabled(rs.getInt("auto_collect_enabled") == 1);
+                network.setLastAutoCollectTime(rs.getLong("last_auto_collect_time"));
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Error loading network auto-collect settings", e);
+        }
     }
 }

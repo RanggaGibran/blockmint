@@ -116,6 +116,30 @@ public class NetworkGUIManager {
         ItemStack upgradeItem = createItem(upgradeItemType, ChatColor.GOLD + "Upgrade Network", upgradeLore);
         inventory.setItem(15, upgradeItem);
         
+        // Add Auto-Collect toggle button
+        ItemStack autoCollectItem;
+        List<String> autoCollectLore = new ArrayList<>();
+        autoCollectLore.add(ChatColor.GRAY + "Automatically collects resources from");
+        autoCollectLore.add(ChatColor.GRAY + "connected generators at " + 
+                ChatColor.YELLOW + String.format("%.0f%%", network.getAutoCollectEfficiency() * 100) + 
+                ChatColor.GRAY + " efficiency");
+        autoCollectLore.add("");
+        
+        if (network.isAutoCollectEnabled()) {
+            autoCollectItem = createItem(Material.HOPPER, 
+                    ChatColor.GREEN + "Auto-Collect: " + ChatColor.DARK_GREEN + "ENABLED", 
+                    autoCollectLore);
+            autoCollectLore.add(ChatColor.YELLOW + "Click to disable");
+        } else {
+            autoCollectItem = createItem(Material.DROPPER, 
+                    ChatColor.RED + "Auto-Collect: " + ChatColor.DARK_RED + "DISABLED", 
+                    autoCollectLore);
+            autoCollectLore.add(ChatColor.YELLOW + "Click to enable");
+        }
+        
+        inventory.setItem(17, autoCollectItem);
+        
+        // Fill empty slots with glass panes
         for (int i = 0; i < 36; i++) {
             if (inventory.getItem(i) == null) {
                 inventory.setItem(i, createItem(Material.BLACK_STAINED_GLASS_PANE, " ", null));
@@ -289,6 +313,23 @@ public class NetworkGUIManager {
                     } else {
                         player.sendMessage(ChatColor.RED + "This network is already at the maximum tier.");
                     }
+                    break;
+                    
+                case 17: // Auto-collect toggle
+                    network.setAutoCollectEnabled(!network.isAutoCollectEnabled());
+                    plugin.getNetworkManager().saveNetwork(network);
+                    
+                    if (network.isAutoCollectEnabled()) {
+                        Map<String, String> placeholders = new HashMap<>();
+                        placeholders.put("name", network.getName());
+                        plugin.getMessageManager().send(player, "network.auto-collect-enabled", placeholders);
+                    } else {
+                        Map<String, String> placeholders = new HashMap<>();
+                        placeholders.put("name", network.getName());
+                        plugin.getMessageManager().send(player, "network.auto-collect-disabled", placeholders);
+                    }
+                    
+                    openNetworkMainMenu(player, network);
                     break;
             }
         } else if (title.startsWith(ChatColor.DARK_AQUA + "Network Generators")) {

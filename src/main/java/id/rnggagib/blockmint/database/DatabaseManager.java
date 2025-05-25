@@ -801,6 +801,16 @@ public class DatabaseManager {
                 plugin.getLogger().info("Added total_earnings column to economic_transactions table");
             }
             
+            // Add auto_collect column to networks table if it doesn't exist
+            columns = meta.getColumns(null, null, "networks", "auto_collect_enabled");
+            
+            if (!columns.next()) {
+                stmt.execute("ALTER TABLE networks ADD COLUMN auto_collect_enabled INTEGER DEFAULT 0");
+                stmt.execute("ALTER TABLE networks ADD COLUMN last_auto_collect_time INTEGER DEFAULT 0");
+                plugin.getLogger().info("Added auto-collect columns to networks table");
+            }
+            
+            // Setup indexes
             setupOptimizedIndexes();
         } catch (SQLException e) {
             plugin.getLogger().severe("Failed to fix database schema: " + e.getMessage());

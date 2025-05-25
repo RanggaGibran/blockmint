@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -29,6 +30,11 @@ public class NetworkBlock {
     private long creationTime;
     private double range;
     
+    private boolean autoCollectEnabled;
+    private long lastAutoCollectTime;
+    private double autoCollectRadius;
+    private double autoCollectEfficiency;
+
     public NetworkBlock(int networkId, Location location, UUID owner, String name, NetworkTier tier) {
         this.networkId = networkId;
         this.location = location;
@@ -233,5 +239,29 @@ public class NetworkBlock {
         }
         
         return null;
+    }
+
+    public boolean isAutoCollectEnabled() {
+        return autoCollectEnabled;
+    }
+
+    public void setAutoCollectEnabled(boolean autoCollectEnabled) {
+        this.autoCollectEnabled = autoCollectEnabled;
+    }
+
+    public long getLastAutoCollectTime() {
+        return lastAutoCollectTime;
+    }
+
+    public void setLastAutoCollectTime(long lastAutoCollectTime) {
+        this.lastAutoCollectTime = lastAutoCollectTime;
+    }
+
+    public double getAutoCollectRadius() {
+        return autoCollectRadius;
+    }
+
+    public double getAutoCollectEfficiency() {
+        return autoCollectEfficiency;
     }
 }
