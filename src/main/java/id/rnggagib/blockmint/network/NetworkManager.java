@@ -301,10 +301,6 @@ public class NetworkManager {
             int result = stmt.executeUpdate();
             
             if (result > 0) {
-                // First, remove hologram before modifying network data
-                Location location = network.getLocation();
-                DisplayManager.removeHologram(location);
-                
                 for (int generatorId : network.getConnectedGenerators()) {
                     generatorNetworkMap.remove(generatorId);
                     

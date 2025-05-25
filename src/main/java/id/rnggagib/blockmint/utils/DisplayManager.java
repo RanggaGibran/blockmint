@@ -402,36 +402,6 @@ public class DisplayManager {
         createTemplatedHologram(location, template, createGeneratorReplacements(location, type, level));
     }
     
-    public static void createNetworkHologram(Location location, NetworkBlock network) {
-        if (hasHologram(location)) {
-            removeHologram(location);
-        }
-        
-        HologramTemplate template = getTemplateByName("network_default");
-        if (template == null) {
-            return;
-        }
-        
-        Map<String, String> replacements = new HashMap<>();
-        replacements.put("{tier}", network.getTier().getDisplayName());
-        
-        String ownerName = Bukkit.getOfflinePlayer(network.getOwner()).getName();
-        if (ownerName == null) ownerName = "Unknown";
-        replacements.put("{owner}", ownerName);
-        
-        replacements.put("{count}", String.valueOf(network.getConnectedGeneratorCount()));
-        replacements.put("{max}", String.valueOf(network.getMaxGenerators()));
-        replacements.put("{auto-collect}", network.isAutoCollectEnabled() ? "§aEnabled" : "§cDisabled");
-        
-        createTemplatedHologram(location, template, replacements);
-        
-        UUID hologramUUID = UUID.randomUUID();
-        hologramIds.put(location, hologramUUID);
-        
-        Material material = template.getDisplayMaterial();
-        scheduleAnchorTask(location, template.shouldRotateItem());
-    }
-    
     private static Map<String, String> createGeneratorReplacements(Location location, GeneratorType type, int level) {
         Map<String, String> replacements = new HashMap<>();
         replacements.put("{name}", type.getName());
@@ -774,40 +744,6 @@ public class DisplayManager {
         }
     }
     
-    public static void updateHologram(BlockMint plugin, NetworkBlock network) {
-        Location location = network.getLocation();
-        
-        if (!hasHologram(location) || holograms.get(location) == null || holograms.get(location).size() < 2) {
-            createNetworkHologram(location, network);
-            return;
-        }
-        
-        try {
-            List<Entity> entities = holograms.get(location);
-            if (entities.get(0) instanceof ArmorStand && entities.get(1) instanceof ArmorStand) {
-                ArmorStand titleStand = (ArmorStand) entities.get(0);
-                ArmorStand infoStand = (ArmorStand) entities.get(1);
-                
-                if (titleStand.isDead() || infoStand.isDead()) {
-                    createNetworkHologram(location, network);
-                    return;
-                }
-                
-                titleStand.setCustomName("§b§l" + network.getTier().getDisplayName() + " Network");
-                
-                String generatorInfo = "§7Generators: §f" + network.getConnectedGeneratorCount() + "/" + network.getMaxGenerators();
-                String autoCollectStatus = network.isAutoCollectEnabled() ? " §a[Auto-Collect ON]" : " §c[Auto-Collect OFF]";
-                
-                infoStand.setCustomName(generatorInfo + autoCollectStatus);
-            } else {
-                createNetworkHologram(location, network);
-            }
-        } catch (Exception e) {
-            plugin.getLogger().log(Level.WARNING, "Error updating network hologram", e);
-            createNetworkHologram(location, network);
-        }
-    }
-    
     private static String formatTime(long seconds) {
         if (seconds < 0) seconds = 0;
         
@@ -836,12 +772,6 @@ public class DisplayManager {
             Generator generator = plugin.getGeneratorManager().getGenerator(blockLocation);
             if (generator != null) {
                 createGeneratorHologram(blockLocation, generator.getType(), generator.getLevel());
-                return;
-            }
-            
-            NetworkBlock network = plugin.getNetworkManager().getNetworkAt(blockLocation);
-            if (network != null) {
-                createNetworkHologram(blockLocation, network);
                 return;
             }
             
@@ -986,21 +916,13 @@ public class DisplayManager {
         // First, ensure all old holograms are removed
         removeAllHolograms();
         
-        // Restore generator holograms
+        // Restore generator holograms only
         int generatorCount = 0;
         for (Generator generator : plugin.getGeneratorManager().getActiveGenerators().values()) {
             createGeneratorHologram(generator.getLocation(), generator.getType(), generator.getLevel());
             generatorCount++;
         }
         
-        // Restore network holograms
-        int networkCount = 0;
-        for (NetworkBlock network : plugin.getNetworkManager().getNetworks().values()) {
-            createNetworkHologram(network.getLocation(), network);
-            networkCount++;
-        }
-        
-        plugin.getLogger().info("Restored " + generatorCount + " generator holograms and " + 
-                               networkCount + " network holograms");
+        plugin.getLogger().info("Restored " + generatorCount + " generator holograms");
     }
 }
