@@ -723,6 +723,7 @@ public class DisplayManager {
         }
     }
     
+    
     public static void updateHologram(BlockMint plugin, Generator generator) {
         Location location = generator.getLocation();
         
