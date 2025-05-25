@@ -74,7 +74,11 @@ public class BlockMint extends JavaPlugin {
             loadConfig();
             
             dependencyManager = new DependencyManager(this);
-            initializeDatabase();
+            
+            databaseManager = new DatabaseManager(this);
+            databaseManager.initialize();
+            databaseManager.fixDatabaseSchema(); // Add this line
+            
             registerEvents();
             
             getServer().getScheduler().runTaskLater(this, () -> {

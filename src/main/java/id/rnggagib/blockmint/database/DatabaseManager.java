@@ -8,6 +8,7 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -781,21 +782,39 @@ public class DatabaseManager {
         });
     }
     
-    private void setupOptimizedIndexes() {
-        try (Statement statement = getConnection().createStatement()) {
-            // Create indexes for the most frequently queried fields
-            statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_location ON generators(world, x, y, z)");
-            statement.execute("CREATE INDEX IF NOT EXISTS idx_network_generators_generator_id ON network_generators(generator_id)");
-            statement.execute("CREATE INDEX IF NOT EXISTS idx_generators_usage ON generators(usage_count, resources_generated)");
-            statement.execute("CREATE INDEX IF NOT EXISTS idx_networks_owner ON networks(owner)");
-            statement.execute("CREATE INDEX IF NOT EXISTS idx_networks_location ON networks(world, x, y, z)");
+    public void fixDatabaseSchema() {
+        try (Statement stmt = getConnection().createStatement()) {
+            DatabaseMetaData meta = getConnection().getMetaData();
+            ResultSet columns = meta.getColumns(null, null, "player_stats", "total_earnings");
             
-            // Optimize joins
-            statement.execute("ANALYZE");
+            if (!columns.next()) {
+                plugin.getLogger().warning("Missing total_earnings column detected - adding it now");
+                stmt.execute("ALTER TABLE player_stats ADD COLUMN total_earnings REAL DEFAULT 0.0");
+                
+                stmt.execute("UPDATE player_stats SET total_earnings = 0.0 WHERE total_earnings IS NULL");
+                plugin.getLogger().info("Successfully added total_earnings column to player_stats table");
+            }
             
-            plugin.getLogger().info("Database indexes optimized for performance");
+            columns = meta.getColumns(null, null, "economic_transactions", "total_earnings");
+            if (!columns.next()) {
+                stmt.execute("ALTER TABLE economic_transactions ADD COLUMN total_earnings REAL DEFAULT 0.0");
+                plugin.getLogger().info("Added total_earnings column to economic_transactions table");
+            }
+            
+            setupOptimizedIndexes();
         } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Error setting up optimized database indexes!", e);
+            plugin.getLogger().severe("Failed to fix database schema: " + e.getMessage());
+        }
+    }
+    
+    private void setupOptimizedIndexes() {
+        try (Statement stmt = getConnection().createStatement()) {
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_player_stats_uuid ON player_stats(uuid)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_player_stats_earnings ON player_stats(total_earnings)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_generators_location ON generators(world, x, y, z)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_network_generators_generator_id ON network_generators(generator_id)");
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Failed to create optimization indexes: " + e.getMessage());
         }
     }
     
