@@ -353,7 +353,7 @@ public class DisplayManager {
                     NetworkBlock network = plugin.getNetworkManager().getNetworkAt(location);
                     if (network != null) {
                         removeHologram(location);
-                        createNetworkHologram(location, network);
+                        //createNetworkHologram(location, network);
                         fixed++;
                     } else {
                         removeHologram(location);
