@@ -325,45 +325,45 @@ public class DisplayManager {
     }
     
     private static void verifyHologramIntegrity() {
-        Iterator<Map.Entry<Location, List<Entity>>> iterator = holograms.entrySet().iterator();
-        int fixed = 0;
+        List<Location> locationsToRemove = new ArrayList<>();
         
-        while (iterator.hasNext()) {
-            Map.Entry<Location, List<Entity>> entry = iterator.next();
+        // Create a copy of the entrySet to avoid ConcurrentModificationException
+        for (Map.Entry<Location, List<Entity>> entry : new HashMap<>(holograms).entrySet()) {
             Location location = entry.getKey();
             List<Entity> entities = entry.getValue();
             
-            boolean needsRecreation = false;
+            if (entities == null || entities.isEmpty()) {
+                locationsToRemove.add(location);
+                continue;
+            }
             
+            boolean allDead = true;
             for (Entity entity : entities) {
-                if (entity == null || entity.isDead()) {
-                    needsRecreation = true;
+                if (entity != null && !entity.isDead()) {
+                    allDead = false;
                     break;
                 }
             }
             
-            if (needsRecreation) {
-                Generator generator = plugin.getGeneratorManager().getGenerator(location);
-                if (generator != null) {
-                    removeHologram(location);
-                    createGeneratorHologram(location, generator.getType(), generator.getLevel());
-                    fixed++;
-                } else {
-                    // Check if it's a network block
-                    NetworkBlock network = plugin.getNetworkManager().getNetworkAt(location);
-                    if (network != null) {
-                        removeHologram(location);
-                        //createNetworkHologram(location, network);
-                        fixed++;
-                    } else {
-                        removeHologram(location);
-                    }
-                }
+            if (allDead) {
+                locationsToRemove.add(location);
             }
         }
         
-        if (fixed > 0) {
-            plugin.getLogger().info("Fixed " + fixed + " broken holograms");
+        // Remove invalid holograms
+        for (Location location : locationsToRemove) {
+            holograms.remove(location);
+            hologramIds.remove(location);
+            displayItems.remove(location);
+            
+            BukkitTask task = anchorTasks.remove(location);
+            if (task != null) {
+                task.cancel();
+            }
+        }
+        
+        if (!locationsToRemove.isEmpty()) {
+            plugin.getLogger().fine("Removed " + locationsToRemove.size() + " invalid holograms during integrity check");
         }
     }
     

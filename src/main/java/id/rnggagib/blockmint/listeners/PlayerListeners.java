@@ -8,6 +8,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
+import id.rnggagib.blockmint.commands.subcommands.NetworkCommand;
+import id.rnggagib.blockmint.commands.subcommands.NetworkNotifyCommand;
+
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -54,6 +57,15 @@ public class PlayerListeners implements Listener {
                 plugin.getLogger().log(Level.SEVERE, "Error updating player stats on join!", e);
             }
         });
+        
+        // Load notification settings
+        NetworkCommand networkCommand = (NetworkCommand) plugin.getCommandManager().getSubCommands().get("network");
+        if (networkCommand != null) {
+            NetworkNotifyCommand notifyCommand = (NetworkNotifyCommand) networkCommand.getSubcommands().get("notify");
+            if (notifyCommand != null) {
+                notifyCommand.loadPlayerSetting(event.getPlayer().getUniqueId());
+            }
+        }
     }
     
     @EventHandler(priority = EventPriority.MONITOR)

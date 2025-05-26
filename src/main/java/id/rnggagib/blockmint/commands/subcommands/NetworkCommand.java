@@ -28,6 +28,12 @@ public class NetworkCommand implements SubCommand {
         this.plugin = plugin;
     }
     
+    private Map<String, SubCommand> subcommands = new HashMap<>();
+
+    public void registerSubCommand(String name, SubCommand subCommand) {
+        subcommands.put(name.toLowerCase(), subCommand);
+    }
+    
     @Override
     public String getName() {
         return "network";
@@ -455,6 +461,26 @@ public class NetworkCommand implements SubCommand {
     @Override
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
         if (args.length == 2) {
+            List<String> completions = new ArrayList<>();
+            for (Map.Entry<String, SubCommand> entry : subcommands.entrySet()) {
+                SubCommand subcommand = entry.getValue();
+                if (subcommand.getPermission() == null || sender.hasPermission(subcommand.getPermission())) {
+                    String name = entry.getKey();
+                    if (name.startsWith(args[1].toLowerCase())) {
+                        completions.add(name);
+                    }
+                }
+            }
+            return completions;
+        } else if (args.length > 2) {
+            String subcommandName = args[1].toLowerCase();
+            SubCommand subcommand = subcommands.get(subcommandName);
+            if (subcommand != null) {
+                return subcommand.getTabCompletions(sender, args);
+            }
+        }
+        
+        if (args.length == 2) {
             return Arrays.asList("create", "list", "info", "add", "remove", "upgrade", "give", "visualize").stream()
                     .filter(s -> s.toLowerCase().startsWith(args[1].toLowerCase()))
                     .collect(Collectors.toList());
@@ -504,5 +530,9 @@ public class NetworkCommand implements SubCommand {
         }
         
         return new ArrayList<>();
+    }
+
+    public Map<String, SubCommand> getSubcommands() {
+        return subcommands;
     }
 }

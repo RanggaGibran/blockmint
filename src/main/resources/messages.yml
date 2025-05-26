@@ -91,3 +91,8 @@ network:
   collect-confirm: "<prefix> <yellow>Shift+Left click again within 3 seconds to collect this network block to inventory.</yellow>"
   collected: "<prefix> <green>Network block added to your inventory!</green>"
   collected-inventory-full: "<prefix> <yellow>Your inventory was full, the network block was dropped on the ground!</yellow>"
+  auto-collect-enabled: "<prefix> <green>Auto-collection enabled for network <gold>{name}</gold>.</green>"
+  auto-collect-disabled: "<prefix> <red>Auto-collection disabled for network <gold>{name}</gold>.</red>"
+  auto-collect-success: "<prefix> <green>Network auto-collected <gold>${amount}</gold> from <gold>{count}</gold> generators.</green>"
+  notifications-enabled: "<prefix> <green>Network auto-collect notifications enabled!</green>"
+  notifications-disabled: "<prefix> <red>Network auto-collect notifications disabled.</red>"

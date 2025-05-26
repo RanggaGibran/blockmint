@@ -5,6 +5,8 @@ import id.rnggagib.blockmint.generators.Generator;
 import id.rnggagib.blockmint.utils.DisplayManager;
 import id.rnggagib.blockmint.network.permissions.NetworkPermission;
 import id.rnggagib.blockmint.network.permissions.NetworkPermissionManager;
+import id.rnggagib.blockmint.commands.subcommands.NetworkNotifyCommand;
+import id.rnggagib.blockmint.commands.subcommands.NetworkCommand;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
@@ -663,12 +665,31 @@ public class NetworkManager {
             if (totalCollected > 0) {
                 network.setLastAutoCollectTime(System.currentTimeMillis());
                 
-                Map<String, String> placeholders = new HashMap<>();
-                placeholders.put("amount", String.format("%.2f", totalCollected));
-                placeholders.put("count", String.valueOf(generatorsCollected));
-                placeholders.put("network", network.getTier().getDisplayName());
+                NetworkCommand networkCommand = (NetworkCommand) plugin.getCommandManager().getSubCommands().get("network");
+                NetworkNotifyCommand notifyCommand = null;
+                if (networkCommand != null) {
+                    notifyCommand = (NetworkNotifyCommand) networkCommand.getSubcommands().get("notify");
+                }
                 
-                plugin.getMessageManager().send(owner, "network.auto-collect-success", placeholders);
+                // Only send notifications if enabled for this player
+                if (notifyCommand != null && notifyCommand.shouldNotify(ownerUuid)) {
+                    Map<String, String> placeholders = new HashMap<>();
+                    placeholders.put("amount", String.format("%.2f", totalCollected));
+                    placeholders.put("count", String.valueOf(generatorsCollected));
+                    placeholders.put("network", network.getTier().getDisplayName());
+                    
+                    plugin.getMessageManager().send(owner, "network.auto-collect-success", placeholders);
+                    
+                    // Always update the action bar to show collection amount
+                    if (owner != null && owner.isOnline()) {
+                        owner.spigot().sendMessage(
+                            net.md_5.bungee.api.ChatMessageType.ACTION_BAR,
+                            new net.md_5.bungee.api.chat.TextComponent("§a+" + 
+                                String.format("%.2f", totalCollected) + " from " + 
+                                generatorsCollected + " generators via network")
+                        );
+                    }
+                }
                 
                 plugin.getDatabaseManager().addBatchOperation(
                     ownerUuid,

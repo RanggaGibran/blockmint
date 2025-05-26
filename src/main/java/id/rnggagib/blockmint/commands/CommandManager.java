@@ -33,6 +33,12 @@ public class CommandManager implements CommandExecutor, TabCompleter {
         subCommands.put("network", new NetworkCommand(plugin));
         subCommands.put("evolve", new EvolveCommand(plugin)); // Add the new command
         
+        // Get the network command
+        NetworkCommand networkCommand = (NetworkCommand) subCommands.get("network");
+        if (networkCommand != null) {
+            networkCommand.registerSubCommand("notify", new NetworkNotifyCommand(plugin));
+        }
+        
         plugin.getCommand("blockmint").setExecutor(this);
         plugin.getCommand("blockmint").setTabCompleter(this);
     }

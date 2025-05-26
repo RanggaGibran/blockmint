@@ -605,48 +605,55 @@ public class DatabaseManager {
         List<BatchOperation> operations = batchOperations.remove(playerUUID);
         if (operations == null || operations.isEmpty()) return;
         
-        Map<String, List<Object[]>> groupedOperations = new HashMap<>();
-        for (BatchOperation op : operations) {
-            groupedOperations.computeIfAbsent(op.sql, k -> new ArrayList<>()).add(op.params);
-        }
-        
-        for (Map.Entry<String, List<Object[]>> entry : groupedOperations.entrySet()) {
-            String sql = entry.getKey();
-            List<Object[]> paramSets = entry.getValue();
-            
-            pendingQueries.incrementAndGet();
-            
-            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-                try {
-                    Connection conn = getConnection();
-                    boolean originalAutoCommit = conn.getAutoCommit();
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            Connection conn = null;
+            try {
+                conn = getConnection();
+                
+                // Only start transaction for multiple operations
+                if (operations.size() > 1) {
                     conn.setAutoCommit(false);
-                    
-                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                        for (Object[] params : paramSets) {
-                            for (int i = 0; i < params.length; i++) {
-                                stmt.setObject(i + 1, params[i]);
-                            }
-                            stmt.addBatch();
-                        }
-                        
-                        stmt.executeBatch();
-                        conn.commit();
-                        
-                        invalidateCacheForUpdate(sql);
-                    } catch (SQLException e) {
-                        conn.rollback();
-                        throw e;
-                    } finally {
-                        conn.setAutoCommit(originalAutoCommit);
-                    }
-                } catch (SQLException e) {
-                    plugin.getLogger().log(Level.SEVERE, "Error executing batch operation", e);
-                } finally {
-                    pendingQueries.decrementAndGet();
                 }
-            });
-        }
+                
+                for (BatchOperation operation : operations) {
+                    try (PreparedStatement stmt = conn.prepareStatement(operation.sql)) {
+                        if (operation.params != null) {
+                            for (int i = 0; i < operation.params.length; i++) {
+                                stmt.setObject(i + 1, operation.params[i]);
+                            }
+                        }
+                        stmt.executeUpdate();
+                    }
+                }
+                
+                // Only commit if we started a transaction
+                if (operations.size() > 1 && !conn.getAutoCommit()) {
+                    conn.commit();
+                    conn.setAutoCommit(true);
+                }
+                
+            } catch (SQLException e) {
+                plugin.getLogger().log(Level.SEVERE, "Error executing batch operation", e);
+                if (conn != null) {
+                    try {
+                        if (!conn.getAutoCommit()) {
+                            conn.rollback();
+                            conn.setAutoCommit(true);
+                        }
+                    } catch (SQLException rollbackEx) {
+                        plugin.getLogger().log(Level.SEVERE, "Error rolling back transaction", rollbackEx);
+                    }
+                }
+            } finally {
+                if (conn != null && connectionPool == null) {
+                    try {
+                        conn.close();
+                    } catch (SQLException e) {
+                        plugin.getLogger().log(Level.WARNING, "Error closing connection", e);
+                    }
+                }
+            }
+        });
     }
     
     private boolean isCacheableQuery(String sql) {
@@ -810,7 +817,13 @@ public class DatabaseManager {
                 plugin.getLogger().info("Added auto-collect columns to networks table");
             }
             
-            // Setup indexes
+            // Add network_notifications column if it doesn't exist
+            columns = meta.getColumns(null, null, "player_stats", "network_notifications");
+            if (!columns.next()) {
+                stmt.execute("ALTER TABLE player_stats ADD COLUMN network_notifications BOOLEAN DEFAULT 0");
+                plugin.getLogger().info("Added network_notifications column to player_stats table");
+            }
+            
             setupOptimizedIndexes();
         } catch (SQLException e) {
             plugin.getLogger().severe("Failed to fix database schema: " + e.getMessage());
@@ -877,4 +890,26 @@ public class DatabaseManager {
     public interface ResultSetMapper<T> {
         T map(ResultSet rs) throws SQLException;
     }
+
+    public <T> void prepareAndExecuteAsync(String sql, SqlFunction<PreparedStatement, T> statementConsumer, 
+                                       Consumer<T> resultHandler, Consumer<SQLException> errorHandler) {
+    pendingQueries.incrementAndGet();
+    UUID taskId = UUID.randomUUID();
+    
+    BukkitTask task = plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+        try (PreparedStatement stmt = prepareStatement(sql)) {
+            T result = statementConsumer.apply(stmt);
+            plugin.getServer().getScheduler().runTask(plugin, () -> resultHandler.accept(result));
+        } catch (SQLException e) {
+            if (errorHandler != null) {
+                plugin.getServer().getScheduler().runTask(plugin, () -> errorHandler.accept(e));
+            }
+        } finally {
+            pendingQueries.decrementAndGet();
+            activeTasks.remove(taskId);
+        }
+    });
+    
+    activeTasks.put(taskId, task);
+}
 }
