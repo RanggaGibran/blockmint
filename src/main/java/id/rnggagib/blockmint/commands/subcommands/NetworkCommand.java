@@ -56,52 +56,53 @@ public class NetworkCommand implements SubCommand {
     
     @Override
     public boolean requiresPlayer() {
-        return true;
+        return false;
     }
     
     @Override
     public void execute(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player)) {
-            sender.sendMessage(ChatColor.RED + "This command can only be used by players.");
-            return;
-        }
-        
-        Player player = (Player) sender;
-        
         if (args.length < 2) {
-            showHelp(player);
+            if (sender instanceof Player) {
+                showHelp((Player) sender);
+            } else {
+                sender.sendMessage("Usage: /blockmint network <subcommand>");
+            }
             return;
         }
-        
+
         String subCommand = args[1].toLowerCase();
-        
+
         switch (subCommand) {
             case "create":
-                handleCreateNetwork(player, args);
+                handleCreateNetwork((Player) sender, args);
                 break;
             case "list":
-                handleListNetworks(player);
+                handleListNetworks((Player) sender);
                 break;
             case "info":
-                handleNetworkInfo(player, args);
+                handleNetworkInfo((Player) sender, args);
                 break;
             case "add":
-                handleAddGenerator(player, args);
+                handleAddGenerator((Player) sender, args);
                 break;
             case "remove":
-                handleRemoveGenerator(player, args);
+                handleRemoveGenerator((Player) sender, args);
                 break;
             case "upgrade":
-                handleUpgradeNetwork(player, args);
+                handleUpgradeNetwork((Player) sender, args);
                 break;
             case "give":
-                handleGiveNetworkBlock(player, args);
+                handleGiveNetworkBlock(sender, args);
                 break;
             case "visualize":
-                handleVisualizeNetwork(player);
+                handleVisualizeNetwork((Player) sender);
                 break;
             default:
-                showHelp(player);
+                if (sender instanceof Player) {
+                    showHelp((Player) sender);
+                } else {
+                    sender.sendMessage("Usage: /blockmint network <subcommand>");
+                }
                 break;
         }
     }
@@ -396,39 +397,38 @@ public class NetworkCommand implements SubCommand {
         }
     }
     
-    private void handleGiveNetworkBlock(Player player, String[] args) {
-        if (!player.hasPermission("blockmint.admin.network.give")) {
-            plugin.getMessageManager().send(player, "commands.no-permission");
+    private void handleGiveNetworkBlock(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmint.admin.network.give")) {
+            sender.sendMessage(ChatColor.RED + "You don't have permission to use this command.");
             return;
         }
-        
+
         if (args.length < 4) {
-            player.sendMessage(ChatColor.RED + "Usage: /blockmint network give <player> <tier>");
+            sender.sendMessage(ChatColor.RED + "Usage: /blockmint network give <player> <tier>");
             return;
         }
-        
+
         String targetName = args[2];
-        Player target = plugin.getServer().getPlayer(targetName);
+        Player target = Bukkit.getPlayer(targetName);
         if (target == null) {
-            player.sendMessage(ChatColor.RED + "Player not found: " + targetName);
+            sender.sendMessage(ChatColor.RED + "Player not found: " + targetName);
             return;
         }
-        
+
         String tierName = args[3].toUpperCase();
         NetworkTier tier;
         try {
             tier = NetworkTier.valueOf(tierName);
         } catch (IllegalArgumentException e) {
-            player.sendMessage(ChatColor.RED + "Invalid tier: " + tierName);
-            player.sendMessage(ChatColor.RED + "Available tiers: BASIC, ADVANCED, ELITE, ULTIMATE, CELESTIAL");
+            sender.sendMessage(ChatColor.RED + "Invalid tier: " + tierName);
             return;
         }
-        
+
         String name = "Network " + target.getName();
         ItemStack networkBlock = NetworkBlock.createNetworkBlockItem(tier, name);
         target.getInventory().addItem(networkBlock);
-        
-        player.sendMessage(ChatColor.GREEN + "Gave a " + tier.getDisplayName() + " Network Block to " + target.getName());
+
+        sender.sendMessage(ChatColor.GREEN + "Gave a " + tier.getDisplayName() + " Network Block to " + target.getName());
         target.sendMessage(ChatColor.GREEN + "You received a " + tier.getDisplayName() + " Network Block");
     }
     
