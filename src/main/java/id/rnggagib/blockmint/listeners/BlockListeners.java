@@ -52,53 +52,45 @@ public class BlockListeners implements Listener {
     
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        ItemStack itemInHand = event.getItemInHand();
-        String generatorTypeId = GeneratorItemManager.getGeneratorType(itemInHand);
+        ItemStack item = event.getItemInHand();
+        String generatorType = GeneratorItemManager.getGeneratorType(item);
         
-        if (generatorTypeId == null) {
-            return;
-        }
-        
-        Block block = event.getBlock();
-        Player player = event.getPlayer();
-        
-        GeneratorType generatorType = plugin.getGeneratorManager().getGeneratorTypes().get(generatorTypeId);
         if (generatorType == null) {
-            plugin.getLogger().warning("Attempted to place unknown generator type: " + generatorTypeId);
+            return;
+        }
+
+        // Jika event dibatalkan oleh plugin lain, hormati pembatalan tersebut
+        if (event.isCancelled()) {
+            plugin.getMessageManager().send(event.getPlayer(), "general.cannot-place-here");
             return;
         }
         
-        if (!player.hasPermission("blockmint.use")) {
-            plugin.getMessageManager().send(player, "general.no-permission");
-            event.setCancelled(true);
-            return;
-        }
+        Player player = event.getPlayer();
+        Location location = event.getBlockPlaced().getLocation();
         
-        int maxGenerators = plugin.getConfigManager().getConfig().getInt("settings.max-generators-per-player", 10);
-        if (maxGenerators > 0 && !player.hasPermission("blockmint.bypass.limit")) {
-            int playerGenerators = getPlayerGeneratorCount(player.getUniqueId());
-            if (playerGenerators >= maxGenerators) {
-                event.setCancelled(true);
-                Map<String, String> placeholders = new HashMap<>();
-                placeholders.put("limit", String.valueOf(maxGenerators));
-                plugin.getMessageManager().send(player, "general.generator-limit-reached", placeholders);
-                return;
+        // Biarkan event berjalan dan tunggu hingga post-processing
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            // Cek apakah blok benar-benar terpasang
+            Material expectedMaterial = Material.valueOf(plugin.getGeneratorManager()
+                                               .getGeneratorTypes().get(generatorType).getMaterial());
+            
+            if (location.getBlock().getType() == expectedMaterial) {
+                // Blok terpasang dengan sukses, sekarang daftarkan generator
+                boolean canPlace = plugin.getGeneratorManager().placeGenerator(player.getUniqueId(), location, generatorType);
+                
+                if (canPlace) {
+                    // Generator berhasil didaftarkan
+                    plugin.getMessageManager().send(player, "general.generator-placed");
+                } else {
+                    // Ada masalah dengan pendaftaran generator, kembalikan blok
+                    location.getBlock().setType(Material.AIR);
+                    player.getInventory().addItem(item);
+                    plugin.getMessageManager().send(player, "general.generator-place-failed");
+                }
             }
-        }
-        
-        boolean success = plugin.getGeneratorManager().placeGenerator(
-                player.getUniqueId(), 
-                block.getLocation(), 
-                generatorType.getId()
-        );
-        
-        if (success) {
-            invalidateGeneratorCountCache(player.getUniqueId());
-            plugin.getMessageManager().send(player, "general.generator-placed");
-            if (plugin.getConfigManager().getConfig().getBoolean("settings.use-holograms", true)) {
-                DisplayManager.createHologram(plugin, block.getLocation(), generatorType, 1);
-            }
-        }
+            // Jika blok tidak terpasang, berarti event dibatalkan oleh plugin proteksi
+            // Tidak perlu melakukan apa-apa karena item tetap di inventory player
+        });
     }
     
     @EventHandler(priority = EventPriority.HIGH)
